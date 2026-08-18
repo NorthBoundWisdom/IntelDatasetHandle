@@ -51,9 +51,7 @@ def audit_upstream_split(config: AppConfig) -> LeakageAudit:
             by_session[str(session_id)][str(split)] = int(count)
 
         cross = {
-            session: sorted(splits)
-            for session, splits in by_session.items()
-            if len(splits) > 1
+            session: sorted(splits) for session, splits in by_session.items() if len(splits) > 1
         }
         cross_samples = sum(sum(by_session[session].values()) for session in cross)
 
@@ -118,7 +116,9 @@ def session_holdout_assignments(
     return assignments
 
 
-def grouped_kfold_assignments(config: AppConfig, *, folds: int = 5, seed: int = 0) -> dict[str, int]:
+def grouped_kfold_assignments(
+    config: AppConfig, *, folds: int = 5, seed: int = 0
+) -> dict[str, int]:
     if folds < 2:
         raise ValueError("folds must be at least 2")
     with connect_database(config.index_path, read_only=True) as connection:
