@@ -34,7 +34,7 @@ def test_failed_rebuild_preserves_previous_index(
 
 
 def test_stale_building_database_is_removed_before_rebuild(
-    indexed_workspace: tuple[AppConfig, object]
+    indexed_workspace: tuple[AppConfig, object],
 ) -> None:
     config, _summary = indexed_workspace
     temporary = config.index_path.with_name(config.index_path.name + ".building")
