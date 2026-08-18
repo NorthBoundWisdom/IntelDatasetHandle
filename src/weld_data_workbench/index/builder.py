@@ -146,7 +146,9 @@ class IndexBuilder:
                     relpath = futures[future]
                     try:
                         probe = future.result()
-                    except Exception as exc:  # isolate a programmer/decoder failure to one candidate
+                    except (
+                        Exception
+                    ) as exc:  # isolate a programmer/decoder failure to one candidate
                         logger.exception("Unhandled probe failure for %s", relpath)
                         failed_probes += 1
                         insert_issue(
