@@ -26,7 +26,7 @@ def test_generated_real_schema_fixture_covers_audited_edge_cases(tmp_path: Path)
     assert stats["total_sessions"] == 4
     assert stats["by_split"] == {"test": 3, "train": 2, "validation": 3}
     assert stats["by_category"]["Good"] == 3
-    assert stats["audio_sample_rates_hz"]["16000"] == 5
+    assert stats["audio_sample_rates_hz"]["16000"] == 6
     assert stats["audio_sample_rates_hz"]["22050"] == 1
 
     issue_codes = {item["code"] for item in repo.issues()}
