@@ -5,11 +5,11 @@
       {
         "id": "local-qml-workbench",
         "label": "Local QML Workbench",
-        "description": "Create the Python environment, locate or extract the Intel dataset, and refresh its light-probe index",
+        "description": "Apply source_roots.lock.jsonc user settings and refresh the real dataset workspace",
         "command": "python3",
         "args": [
-          "configs/workbench_workflow.py",
-          "config"
+          "configs/source_root_workflow.py",
+          "--update"
         ],
         "platforms": [
           "darwin"
@@ -25,7 +25,11 @@
             "pyproject.toml",
             "config/default.yaml",
             "configs/freecm.commands.jsonc",
-            "configs/workbench_workflow.py"
+            "configs/source_roots.py",
+            "configs/source_root_workflow.py",
+            "configs/workbench_workflow.py",
+            "source_roots.lock.jsonc.in",
+            "source_roots.lock.jsonc"
           ],
           "outputs": [
             "build/freecm/configured.json"

@@ -38,28 +38,38 @@ python -m pip install -U pip
 python -m pip install -e ".[all,dev]"
 ```
 
-The desktop browser uses an installed Qt `qml` runtime, not PySide. On macOS it
-is discovered from `PATH` or `~/Qt/*/macos/bin/qml`; set `WELD_QML_RUNTIME` to
-an explicit executable when Qt is installed elsewhere.
+The desktop browser uses the installed Qt `qml` and Qt Multimedia runtimes, not
+PySide. User-specific Qt and dataset paths are stored in both
+`source_roots.lock.jsonc.in` and `source_roots.lock.jsonc`.
 
 ## FreeCM buttons
 
 FreeCM discovers [the repository command manifest](configs/freecm.commands.jsonc)
 and exposes these project buttons:
 
-- **Config** creates/reuses `.venv`, installs dependencies, locates or safely
-  extracts the dataset, refreshes the real light-probe index, and writes the
-  ignored `build/freecm/configured.json` readiness receipt.
+- **Config** runs the standard `source_root_workflow.py --update`, applies the
+  active lock's `AppConfigs`, refreshes the real light-probe index, and writes
+  the ignored `build/freecm/configured.json` readiness receipt.
 - **Build** runs the installed `qmllint`, builds a wheel, and verifies that the
   native QML resources are packaged without the removed PySide bridge.
 - **Run** starts a loopback API on an available port and launches the installed
-  native `qml` executable; closing QML also stops the API process.
+  native `qml` executable with embedded Qt Multimedia audio/video playback;
+  closing QML also stops the API process.
 - **Test** runs Ruff, formatting, compilation, and the complete pytest suite.
 
-Machine-specific overrides are available through `WELD_QML_RUNTIME`,
+Initialize the checked-in FreeCM submodule and locks with:
+
+```bash
+git submodule update --init --recursive FreeCM
+python3 configs/source_root_workflow.py --init
+python3 configs/source_root_workflow.py --update
+```
+
+Edit `AppConfigs` in both lock files when changing `WELD_QML_RUNTIME`,
 `WELD_DATASET_HOME`, `WELD_DATASET_ROOT`, `WELD_DATASET_ARCHIVE`,
-`WELD_EXTRACTED_ROOT`, `WELD_WORKSPACE`, and `WELD_SCAN_WORKERS`. No absolute
-host path is committed.
+`WELD_EXTRACTED_ROOT`, `WELD_WORKSPACE`, or `WELD_SCAN_WORKERS`. The reviewed
+`.in` template is tracked; the active `.json` lock is machine-local and ignored,
+and `--init` creates it from the template when absent.
 
 Generate a small synthetic dataset and exercise the complete local workflow:
 

@@ -156,6 +156,10 @@ def find_qml_runtime(explicit: Path | None = None) -> Path | None:
     )
 
 
+def qt_multimedia_module(qml_runtime: Path) -> Path:
+    return (qml_runtime.expanduser().resolve().parent.parent / "qml" / "QtMultimedia").resolve()
+
+
 def _venv_python() -> Path:
     if os.name == "nt":
         return VENV_ROOT / "Scripts" / "python.exe"
@@ -302,6 +306,9 @@ def configure() -> None:
         raise WorkflowError(
             "No native Qt QML runtime found. Set WELD_QML_RUNTIME to the qml executable."
         )
+    multimedia_module = qt_multimedia_module(qml_runtime)
+    if not multimedia_module.is_dir():
+        raise WorkflowError(f"Qt Multimedia QML module is missing: {multimedia_module}")
     python = _ensure_environment()
 
     data_home = _path_from_env("WELD_DATASET_HOME", Path.home() / "Datasets" / "IntelWelding")
@@ -360,6 +367,7 @@ def configure() -> None:
         "index_path": str(index_path),
         "python": str(python),
         "qml_runtime": str(qml_runtime),
+        "qt_multimedia_module": str(multimedia_module),
         "workspace_root": str(workspace_root),
     }
     _write_receipt(receipt)
@@ -382,6 +390,9 @@ def _require_configuration() -> tuple[Path, Path, Path]:
         raise WorkflowError(f"Workspace index is missing: {workspace_root}")
     if not qml_runtime.is_file() or not os.access(qml_runtime, os.X_OK):
         raise WorkflowError(f"Configured QML runtime is unavailable: {qml_runtime}")
+    multimedia_module = qt_multimedia_module(qml_runtime)
+    if not multimedia_module.is_dir():
+        raise WorkflowError(f"Configured Qt Multimedia module is unavailable: {multimedia_module}")
     return python, workspace_root, qml_runtime
 
 

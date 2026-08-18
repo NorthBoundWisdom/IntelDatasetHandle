@@ -23,7 +23,7 @@ Result: both passed
 
 ```text
 .venv/bin/python -m pytest -q
-Result: 18 passed, 1 dependency deprecation warning (2.27s final run)
+Result: 21 passed, 1 dependency deprecation warning (3.02s final run)
 ```
 
 The warning originates in FastAPI/Starlette's test-client compatibility layer;
@@ -47,7 +47,7 @@ python3 configs/workbench_workflow.py build
 Result: passed
 ```
 
-The FreeCM Build action first passed Qt 6.11.1 `qmllint`, then produced a wheel
+The FreeCM Build action first passed Qt 6.11.2 `qmllint`, then produced a wheel
 containing `Main.qml` and its components. It also verified that removed PySide
 controller/model modules were absent from the clean build.
 
@@ -85,14 +85,16 @@ warnings. Validation also reports that 216 session IDs cross official splits.
 These are source-data/split properties, not scanner failures. Full counts and
 media metadata are recorded in `DevDocs/DATASET_NOTES.md`.
 
-The FreeCM Config action reused this real workspace and refreshed all 4,040
-samples. The native QML smoke launched against a dynamically allocated loopback
-port, received HTTP 200 from health, stats, and the 1,000-sample page, exited on
-schedule, and shut down the API child cleanly.
+The standard FreeCM `--init` and `--update` workflows completed successfully.
+`--update` applied all user settings from `source_roots.lock.jsonc`, reused the
+real workspace, and refreshed all 4,040 samples. The native QML smoke loaded Qt
+Multimedia with its FFmpeg 7.1.5 backend, received HTTP 200 from health, stats,
+and the 1,000-sample page, exited on schedule, and shut down the API child
+cleanly.
 
 ## Known verification limits
 
-- The installed Qt runtime lacks Qt Multimedia, so original audio/video opens
-  externally; cached visual previews remain available inside QML.
+- Qt Multimedia is connected for embedded audio/video playback, but codec
+  behavior still depends on the target machine's FFmpeg backend.
 - Exact sensor units and synchronization-marker semantics are not encoded unambiguously in the CSV headers and still require upstream confirmation.
 - The included ML baseline is an engineering smoke baseline, not a reproduction of Intel's paper results.

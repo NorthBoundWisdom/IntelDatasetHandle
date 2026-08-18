@@ -7,6 +7,7 @@ from configs.workbench_workflow import (
     discover_dataset_root,
     find_dataset_archive,
     find_qml_runtime,
+    qt_multimedia_module,
 )
 
 
@@ -45,6 +46,17 @@ def test_qml_runtime_accepts_an_explicit_native_qt_binary(tmp_path: Path) -> Non
     assert find_qml_runtime(runtime) == runtime.resolve()
 
 
+def test_qt_multimedia_module_follows_the_runtime_version(tmp_path: Path) -> None:
+    qt_root = tmp_path / "Qt" / "6.11.2" / "macos"
+    runtime = qt_root / "bin" / "qml"
+    runtime.parent.mkdir(parents=True)
+    runtime.touch(mode=0o755)
+    multimedia = qt_root / "qml" / "QtMultimedia"
+    multimedia.mkdir(parents=True)
+
+    assert qt_multimedia_module(runtime) == multimedia.resolve()
+
+
 def test_freecm_manifest_exposes_config_build_run_and_test() -> None:
     manifest = json.loads(Path("configs/freecm.commands.jsonc").read_text(encoding="utf-8"))
 
@@ -59,9 +71,32 @@ def test_freecm_manifest_exposes_config_build_run_and_test() -> None:
         "test": "precommit",
     }
     assert configuration["readiness"]["outputs"] == ["build/freecm/configured.json"]
+    assert configuration["args"] == ["configs/source_root_workflow.py", "--update"]
 
     for action in ("build", "run", "test"):
         assert commands[action]
         assert commands[action][0]["configurations"] == ["local-qml-workbench"]
 
     assert "PySide" not in Path("pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_source_roots_locks_store_the_same_user_configuration() -> None:
+    template = json.loads(Path("source_roots.lock.jsonc.in").read_text(encoding="utf-8"))
+
+    assert template["schemaVersion"] == 5
+    assert template["AppConfigs"]["WELD_QML_RUNTIME"].endswith("/macos/bin/qml")
+    assert template["AppConfigs"]["WELD_WORKSPACE"].endswith("/IntelWelding/workspace")
+    assert template["depsMode"] == "pinned"
+    assert template["depsManualPath"] == {}
+    assert template["dependencies"] == {}
+
+    active_path = Path("source_roots.lock.jsonc")
+    if active_path.exists():
+        active = json.loads(active_path.read_text(encoding="utf-8"))
+        assert template["AppConfigs"] == active["AppConfigs"]
+        assert template["terminalPath"] == active["terminalPath"]
+
+    ignore = Path(".gitignore").read_text(encoding="utf-8")
+    assert "source_roots.lock.jsonc" in ignore
+    assert ".source_roots.lock.jsonc.lock" in ignore
+    assert ".freecm.workspace.lock" in ignore

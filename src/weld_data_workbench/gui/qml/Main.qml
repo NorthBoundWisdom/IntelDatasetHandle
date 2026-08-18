@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 import "components"
 
 ApplicationWindow {
@@ -116,6 +117,8 @@ ApplicationWindow {
     }
 
     function selectSample(sampleId) {
+        videoPlayer.stop()
+        audioPlayer.stop()
         request("GET", "/api/samples/" + encodeURIComponent(sampleId), function(payload) {
             selected = payload
             previews = ({})
@@ -156,6 +159,35 @@ ApplicationWindow {
     }
 
     ListModel { id: samplesModel }
+
+    AudioOutput {
+        id: videoAudioOutput
+        volume: videoVolume.value
+    }
+
+    MediaPlayer {
+        id: videoPlayer
+        source: window.selected.primary_video_url || ""
+        audioOutput: videoAudioOutput
+        videoOutput: videoOutput
+        onErrorOccurred: function(error, errorString) {
+            window.statusText = "Video playback error: " + errorString
+        }
+    }
+
+    AudioOutput {
+        id: sampleAudioOutput
+        volume: audioVolume.value
+    }
+
+    MediaPlayer {
+        id: audioPlayer
+        source: window.selected.primary_audio_url || ""
+        audioOutput: sampleAudioOutput
+        onErrorOccurred: function(error, errorString) {
+            window.statusText = "Audio playback error: " + errorString
+        }
+    }
 
     Dialog {
         id: errorDialog
@@ -376,6 +408,71 @@ ApplicationWindow {
                                 Button { text: window.previews.sample_id ? "Regenerate previews" : "Generate previews"; onClicked: window.generatePreviews(Boolean(window.previews.sample_id)) }
                             }
                         }
+                    }
+
+                    Label {
+                        text: "Video"
+                        visible: Boolean(window.selected.primary_video_url)
+                        font.pixelSize: 17
+                        font.bold: true
+                        leftPadding: 12
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: visible ? 360 : 0
+                        visible: Boolean(window.selected.primary_video_url)
+                        color: "black"
+                        VideoOutput {
+                            id: videoOutput
+                            anchors.fill: parent
+                            fillMode: VideoOutput.PreserveAspectFit
+                        }
+                    }
+                    RowLayout {
+                        visible: Boolean(window.selected.primary_video_url)
+                        Layout.fillWidth: true
+                        Button {
+                            text: videoPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
+                            onClicked: videoPlayer.playbackState === MediaPlayer.PlayingState ? videoPlayer.pause() : videoPlayer.play()
+                        }
+                        Button { text: "Stop"; onClicked: videoPlayer.stop() }
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: Math.max(videoPlayer.duration, 1)
+                            value: videoPlayer.position
+                            onMoved: videoPlayer.position = value
+                        }
+                        Label { text: Math.floor(videoPlayer.position / 1000) + " / " + Math.floor(videoPlayer.duration / 1000) + " s" }
+                        Label { text: "Volume" }
+                        Slider { id: videoVolume; from: 0; to: 1; value: 0.5; Layout.preferredWidth: 100 }
+                    }
+
+                    Label {
+                        text: "Audio"
+                        visible: Boolean(window.selected.primary_audio_url)
+                        font.pixelSize: 17
+                        font.bold: true
+                        leftPadding: 12
+                    }
+                    RowLayout {
+                        visible: Boolean(window.selected.primary_audio_url)
+                        Layout.fillWidth: true
+                        Button {
+                            text: audioPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
+                            onClicked: audioPlayer.playbackState === MediaPlayer.PlayingState ? audioPlayer.pause() : audioPlayer.play()
+                        }
+                        Button { text: "Stop"; onClicked: audioPlayer.stop() }
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: Math.max(audioPlayer.duration, 1)
+                            value: audioPlayer.position
+                            onMoved: audioPlayer.position = value
+                        }
+                        Label { text: Math.floor(audioPlayer.position / 1000) + " / " + Math.floor(audioPlayer.duration / 1000) + " s" }
+                        Label { text: "Volume" }
+                        Slider { id: audioVolume; from: 0; to: 1; value: 0.7; Layout.preferredWidth: 100 }
                     }
 
                     Image {

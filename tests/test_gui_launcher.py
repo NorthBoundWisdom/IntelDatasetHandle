@@ -25,3 +25,12 @@ def test_qml_command_passes_api_and_smoke_arguments_after_separator(tmp_path: Pa
         "--api-base=http://127.0.0.1:43210",
         "--smoke-ms=750",
     ]
+
+
+def test_native_qml_frontend_declares_multimedia_players() -> None:
+    source = Path("src/weld_data_workbench/gui/qml/Main.qml").read_text(encoding="utf-8")
+
+    assert "import QtMultimedia" in source
+    assert "MediaPlayer {" in source
+    assert "VideoOutput {" in source
+    assert "AudioOutput {" in source

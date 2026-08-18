@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 5,
+  "AppConfigs": {
+    "WELD_QML_RUNTIME": "/Users/ethan/Qt/6.11.2/macos/bin/qml",
+    "WELD_DATASET_HOME": "/Users/ethan/Datasets/IntelWelding",
+    "WELD_DATASET_ROOT": "/Users/ethan/Datasets/IntelWelding/extracted/raid/intel_robotic_welding_dataset",
+    "WELD_DATASET_ARCHIVE": "/Users/ethan/Datasets/IntelWelding/intel_robotic_welding_dataset.tar.gz",
+    "WELD_EXTRACTED_ROOT": "/Users/ethan/Datasets/IntelWelding/extracted",
+    "WELD_WORKSPACE": "/Users/ethan/Datasets/IntelWelding/workspace",
+    "WELD_SCAN_WORKERS": "8"
+  },
+  "cmakeEnvironment": {},
+  "cmakeCacheVariables": {},
+  "terminalPath": {
+    "mac": [
+      "/Users/ethan/Qt/6.11.2/macos/bin"
+    ]
+  },
+  "depsMode": "pinned",
+  "depsManualPath": {},
+  "dependencies": {},
+  "assets": {}
+}
