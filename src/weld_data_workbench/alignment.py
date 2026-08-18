@@ -48,7 +48,7 @@ def _robust_onset(
     baseline_fraction: float = 0.10,
     minimum_baseline_points: int = 3,
     consecutive: int = 2,
-) -> tuple[float | None, float, dict[str, float]]:
+) -> tuple[float | None, float, dict[str, Any]]:
     values = np.asarray(values, dtype=np.float64)
     time_axis_s = np.asarray(time_axis_s, dtype=np.float64)
     finite = np.isfinite(values) & np.isfinite(time_axis_s)
@@ -78,7 +78,7 @@ def _robust_onset(
     confidence = 0.0
     if peak > baseline:
         confidence = float(np.clip((peak - threshold) / (peak - baseline), 0.0, 1.0))
-    details = {
+    details: dict[str, Any] = {
         "baseline": baseline,
         "mad": mad,
         "p95": upper,
