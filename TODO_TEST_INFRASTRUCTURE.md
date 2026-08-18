@@ -6,9 +6,11 @@ This roadmap tracks the infrastructure phase after the first successful integrat
 
 - Real public archive audited: 4,040 samples across 236 sessions.
 - Real light-probe scan succeeds for all present AVI, FLAC, CSV, and JPEG assets.
+- Video probing uses OpenCV first and an explicit ffprobe metadata fallback when OpenCV cannot open or validate an AVI; decode verification remains separately reported.
 - Three source samples have no post-weld images; these are source-data findings rather than scanner failures.
 - Public FLAC assets are mono 16 kHz PCM-16.
 - The upstream train/validation/test counts match the paper, but 216 session IDs cross official split boundaries.
+- Cached image/video perceptual hashes support bounded near-duplicate leakage triage, and one immutable prediction set can be compared under upstream and session-disjoint policies.
 - CLI, SQLite repository, validation, preview generation, resumable handcrafted features, Isolation Forest baseline, FastAPI, native QML, FreeCM workflow, experiment/evaluation utilities, and synthetic/real-schema fixtures are present.
 - Public CI currently runs Linux Python 3.11/3.12/3.13, Ruff, formatting, compileall, scoped mypy, pytest with an 80% core coverage gate, synthetic smoke, wheel build, and clean-wheel CLI smoke.
 
@@ -63,14 +65,15 @@ Delivered for the indexed/local dataset boundary. Snapshot verification intentio
 - [x] Preserve the atomic `index.sqlite3.building -> index.sqlite3` replacement contract.
 - [x] Add failure/restart tests covering SQLite write failure, stale `.building`, `KeyboardInterrupt`, and reading the old active index while a replacement is built.
 - [x] Keep probe/codec failure isolated to the affected candidate rather than aborting unrelated samples.
+- [x] Add ffprobe metadata fallback for AVI assets that OpenCV cannot open or validate, without treating metadata fallback as decode verification.
 - [x] Verify that failed/interrupted rebuilds leave the previous index queryable and remove temporary WAL/SHM/building files.
 - [x] Make a no-op incremental scan avoid reopening unchanged media codecs.
-- [x] Record scan statistics for reused, reprobed, removed, and failed samples.
-- [ ] Add an explicit `added_sample_count` field to the build summary rather than inferring it from discovery/reuse statistics.
+- [x] Record scan statistics for added, reused, reprobed, removed, and failed samples.
+- [x] Add an explicit `added_sample_count` field to the build summary and persisted incremental summary.
 
 ### Exit criteria
 
-The core restart/atomicity contract is implemented. Remaining work is mostly reporting refinement and real-dataset performance measurement.
+The core restart/atomicity and incremental reporting contract is implemented. Remaining work here is real-dataset performance measurement rather than correctness plumbing.
 
 ---
 
@@ -101,16 +104,16 @@ The published `split` remains immutable upstream annotation; experimental assign
 
 - [x] Keep upstream split annotations separate from generated experimental split artifacts.
 - [x] Add leakage audit for sessions crossing partitions and exact asset hashes when SHA-256 is available.
-- [ ] Add scalable near-duplicate detection across partitions; exact hashes alone are insufficient for acquisition leakage.
+- [x] Add cached, bounded perceptual image/video near-duplicate candidate detection across partitions; exact hashes alone are insufficient for acquisition leakage.
 - [x] Add deterministic session-disjoint holdout generation with explicit random seed.
 - [x] Add session-grouped K-fold utilities.
 - [x] Add a deterministic balanced holdout heuristic that keeps whole sessions while approximating sample/category targets; retain hash assignment as a simpler fallback.
 - [x] Export split assignments as versioned standalone artifacts rather than rewriting raw annotations.
-- [ ] Add a top-level comparison report that evaluates one prediction set under official-split and session-disjoint policies side by side.
+- [x] Add a top-level comparison report that evaluates one immutable prediction set under official-split and session-disjoint policies side by side.
 
 ### Exit criteria
 
-The split generator prevents direct session overlap. Near-duplicate detection and paired official-vs-grouped result reporting remain open.
+Delivered for the current split/evaluation boundary: direct session overlap is prevented in generated policies, perceptual duplicate candidates are triageable, and upstream-vs-grouped evaluation is reportable without refitting or silently tuning thresholds on test data.
 
 ---
 
@@ -181,7 +184,7 @@ Delivered for current handcrafted feature extractors. Learned CPU/GPU extractors
 - [x] Add externally calibrated fixed-threshold operating-point analysis by session, weld type, steel type, and thickness, including FPR/FNR range summaries.
 - [ ] Add missing-modality robustness evaluation.
 - [ ] Add inference latency/memory fields to the common prediction/evaluation contract.
-- [ ] Add paired official-split versus session-disjoint comparison reports.
+- [x] Add paired official-split versus session-disjoint comparison reports for one immutable prediction set.
 
 Thresholds must be calibrated outside the evaluation frame (normally train/validation). The evaluator never tunes an operating threshold on the test frame.
 
@@ -224,9 +227,8 @@ Only after the remaining leakage/reporting work is stable:
 
 ## Next recommended implementation order
 
-1. Near-duplicate leakage detection and official-vs-session-disjoint comparison report.
-2. Expand benchmark harness: scratch full/no-op scan, preview/features/API throughput, large synthetic benchmark fixture.
-3. Complete alignment with active-interval/end detection and batch quality reporting.
-4. Build QML synchronized timeline and compare/annotation workflows on top of alignment/job APIs.
-5. Add stronger unimodal audio/sensor/video/image baselines only after the above reporting boundary is stable.
-6. Move to calibrated fusion and online replay after unimodal results are reproducible.
+1. Expand benchmark harness: scratch full/no-op scan, preview/features/API throughput, and a generated large synthetic benchmark fixture.
+2. Complete alignment with active-interval/end detection and batch quality reporting.
+3. Build QML synchronized timeline and compare/annotation workflows on top of alignment/job APIs.
+4. Add stronger unimodal audio/sensor/video/image baselines once the remaining measurement boundary is stable.
+5. Move to calibrated fusion and online replay after unimodal results are reproducible.
