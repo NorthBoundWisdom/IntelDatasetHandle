@@ -188,7 +188,7 @@ def _balanced_holdout_assignments(
             if proposed_total > target:
                 overfill_cost += ((proposed_total - target) / scale) ** 2
 
-            for category, category_total in category_totals.items():
+            for category in category_totals:
                 proposed = current_category[split_name][category]
                 if split_name == candidate_split:
                     proposed += candidate_counts.get(category, 0)
