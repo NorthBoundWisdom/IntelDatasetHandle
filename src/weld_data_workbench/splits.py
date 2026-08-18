@@ -14,7 +14,7 @@ SPLIT_ARTIFACT_SCHEMA_VERSION = 1
 
 
 def _stable_unit(seed: int, value: str) -> float:
-    digest = hashlib.sha256(f"{seed}:{value}".encode("utf-8")).digest()
+    digest = hashlib.sha256(f"{seed}:{value}".encode()).digest()
     return int.from_bytes(digest[:8], "big") / float(2**64)
 
 
