@@ -241,6 +241,7 @@ class SignatureCache:
                     _ALGORITHM_VERSION,
                     size_bytes,
                     mtime_ns,
+                    bits,
                     f"{value:0{width}x}",
                     _utc_now(),
                 ),
