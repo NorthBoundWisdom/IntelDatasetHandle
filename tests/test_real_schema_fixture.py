@@ -13,20 +13,21 @@ def test_generated_real_schema_fixture_covers_audited_edge_cases(tmp_path: Path)
     raw = tmp_path / "raw"
     workspace = tmp_path / "workspace"
     fixture = generate_real_schema_fixture(raw)
-    assert fixture.samples == 8
+    assert fixture.samples == 9
     assert fixture.sessions == 4
 
     config = init_workspace(raw, workspace)
     summary = IndexBuilder(config).build(workers=2)
-    assert summary.sample_count == 8
+    assert summary.sample_count == 9
 
     repo = DatasetRepository(config.index_path, config.dataset_root)
     stats = repo.stats()
-    assert stats["total_samples"] == 8
+    assert stats["total_samples"] == 9
     assert stats["total_sessions"] == 4
-    assert stats["by_split"] == {"test": 3, "train": 2, "validation": 3}
+    assert stats["by_split"] == {"test": 4, "train": 2, "validation": 3}
     assert stats["by_category"]["Good"] == 3
-    assert stats["audio_sample_rates_hz"]["16000"] == 6
+    assert stats["by_category"]["Undercut"] == 3
+    assert stats["audio_sample_rates_hz"]["16000"] == 7
     assert stats["audio_sample_rates_hz"]["22050"] == 1
 
     issue_codes = {item["code"] for item in repo.issues()}
@@ -34,6 +35,7 @@ def test_generated_real_schema_fixture_covers_audited_edge_cases(tmp_path: Path)
     assert "unexpected_image_count" in issue_codes
     assert "video_probe_failed" in issue_codes
     assert "audio_probe_failed" in issue_codes
+    assert "sensor_probe_failed" in issue_codes
     assert "image_probe_failed" in issue_codes
 
     # Two different session directories intentionally use the same sample basename;
