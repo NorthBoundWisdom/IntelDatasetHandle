@@ -48,9 +48,7 @@ def test_near_duplicate_scan_finds_cross_split_copied_media(tmp_path: Path) -> N
 
     expected_key = tuple(sorted((source_id, target_id)))
     matching = [
-        pair
-        for pair in first.pairs
-        if (pair["sample_a"], pair["sample_b"]) == expected_key
+        pair for pair in first.pairs if (pair["sample_a"], pair["sample_b"]) == expected_key
     ]
     assert len(matching) == 1
     pair = matching[0]
@@ -71,6 +69,4 @@ def test_near_duplicate_scan_finds_cross_split_copied_media(tmp_path: Path) -> N
     assert second.summary.signatures_computed == 0
     assert second.summary.signatures_reused == 52
     assert second.summary.signature_failures == 0
-    assert any(
-        (pair["sample_a"], pair["sample_b"]) == expected_key for pair in second.pairs
-    )
+    assert any((pair["sample_a"], pair["sample_b"]) == expected_key for pair in second.pairs)
