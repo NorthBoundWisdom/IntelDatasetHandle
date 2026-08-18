@@ -55,7 +55,7 @@ def test_snapshot_rejects_tampered_document(
 
 
 def test_session_holdout_is_deterministic_and_disjoint(
-    indexed_workspace: tuple[AppConfig, object]
+    indexed_workspace: tuple[AppConfig, object],
 ) -> None:
     config, _summary = indexed_workspace
     first = session_holdout_assignments(config, seed=42)
@@ -73,7 +73,7 @@ def test_session_holdout_is_deterministic_and_disjoint(
 
 
 def test_grouped_kfold_assigns_each_session_once(
-    indexed_workspace: tuple[AppConfig, object]
+    indexed_workspace: tuple[AppConfig, object],
 ) -> None:
     config, _summary = indexed_workspace
     assignments = grouped_kfold_assignments(config, folds=3, seed=7)
