@@ -48,7 +48,7 @@ def _metric_bundle(
             pr_auc=None,
             eer=None,
             fnr_at_fpr={f"{target:g}": None for target in fpr_targets},
-            samples=int(len(labels)),
+            samples=len(labels),
             positive_samples=positives,
             negative_samples=negatives,
         )
@@ -74,7 +74,7 @@ def _metric_bundle(
         pr_auc=pr_auc,
         eer=eer,
         fnr_at_fpr=at_fpr,
-        samples=int(len(labels)),
+        samples=len(labels),
         positive_samples=positives,
         negative_samples=negatives,
     )
