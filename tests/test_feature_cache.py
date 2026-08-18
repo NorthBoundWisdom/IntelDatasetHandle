@@ -53,7 +53,8 @@ def test_feature_cache_invalidates_only_touched_modality(indexed_workspace, tmp_
         workers=2,
     )
 
-    sample = extractor.repository.get_sample("good-train-000")
+    row = extractor.repository.list_samples(category="Good", split="train", limit=1)[0]
+    sample = extractor.repository.get_sample(str(row["sample_id"]))
     assert sample is not None
     audio = next(asset for asset in sample["assets"] if asset["kind"] == "audio")
     audio_path = Path(audio["absolute_path"])
