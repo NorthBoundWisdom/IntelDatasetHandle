@@ -34,11 +34,18 @@ jobs:
           ruff format --check src tests scripts configs
       - name: Compile
         run: python -m compileall -q src scripts tests configs
-      - name: Type-check new infrastructure
+      - name: Type-check infrastructure
         run: >-
           mypy --follow-imports=skip --ignore-missing-imports
+          src/weld_data_workbench/alignment.py
+          src/weld_data_workbench/benchmark.py
+          src/weld_data_workbench/evaluation.py
+          src/weld_data_workbench/experiments.py
           src/weld_data_workbench/provenance.py
+          src/weld_data_workbench/real_schema_fixture.py
           src/weld_data_workbench/splits.py
+          src/weld_data_workbench/features/cache.py
+          src/weld_data_workbench/index/incremental.py
       - name: Tests
         run: pytest -q --cov=weld_data_workbench --cov-report=term-missing --cov-report=xml
       - name: Synthetic end-to-end smoke
@@ -70,4 +77,5 @@ jobs:
           python -m venv /tmp/weld-wheel-venv
           /tmp/weld-wheel-venv/bin/pip install dist/*.whl
           /tmp/weld-wheel-venv/bin/weldtool --help
+          /tmp/weld-wheel-venv/bin/weldinfra --help
           /tmp/weld-wheel-venv/bin/weldtool synthetic --output /tmp/weld-synthetic
