@@ -54,18 +54,19 @@ def test_policy_comparison_exposes_upstream_session_overlap(tmp_path: Path) -> N
         bootstrap_iterations=0,
     )
     assert report["prediction_samples"] == 9
-    assert report["policies"]["upstream"]["session_overlap"][
-        "sessions_crossing_any_partition"
-    ] > 0
-    assert report["policies"]["upstream"]["session_overlap"]["pairwise"][
-        "validation_test"
-    ]["count"] > 0
-    assert report["policies"]["session_disjoint"]["session_overlap"][
-        "sessions_crossing_any_partition"
-    ] == 0
-    assert report["policies"]["upstream"]["metrics"]["evaluation_combined"]["overall"][
-        "roc_auc"
-    ] == 1.0
+    assert report["policies"]["upstream"]["session_overlap"]["sessions_crossing_any_partition"] > 0
+    assert (
+        report["policies"]["upstream"]["session_overlap"]["pairwise"]["validation_test"]["count"]
+        > 0
+    )
+    assert (
+        report["policies"]["session_disjoint"]["session_overlap"]["sessions_crossing_any_partition"]
+        == 0
+    )
+    assert (
+        report["policies"]["upstream"]["metrics"]["evaluation_combined"]["overall"]["roc_auc"]
+        == 1.0
+    )
 
 
 def test_split_artifact_verification_rejects_tampering(tmp_path: Path) -> None:
