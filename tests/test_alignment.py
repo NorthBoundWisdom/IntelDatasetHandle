@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 from weld_data_workbench.alignment import estimate_sample_alignment, sensor_time_axis
 from weld_data_workbench.config import init_workspace
@@ -45,9 +49,25 @@ def test_alignment_recovers_known_fixture_onsets(tmp_path: Path) -> None:
     assert report.offsets_s["video"] is not None
 
 
-def test_sensor_time_axis_refuses_to_invent_sampling_rate() -> None:
-    import pandas as pd
+def test_sensor_time_axis_parses_audited_datetime_without_warning() -> None:
+    frame = pd.DataFrame(
+        {
+            "Date": ["04-03-23", "04-03-23", "04-03-23"],
+            "Time": ["10:00:00.000", "10:00:00.010", "10:00:00.020"],
+            "Primary Weld Current": [0.0, 1.0, 2.0],
+        }
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        axis, source = sensor_time_axis(frame)
 
+    assert caught == []
+    assert axis is not None
+    assert axis.tolist() == pytest.approx([0.0, 0.01, 0.02])
+    assert source.endswith(":%m-%d-%y %H:%M:%S.%f")
+
+
+def test_sensor_time_axis_refuses_to_invent_sampling_rate() -> None:
     frame = pd.DataFrame({"Primary Weld Current": [0.0, 1.0, 2.0]})
     axis, source = sensor_time_axis(frame)
     assert axis is None
