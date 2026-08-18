@@ -7,14 +7,17 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from .alignment import estimate_sample_alignment, write_alignment_report
 from .benchmark import run_repository_benchmark, write_benchmark_report
 from .config import load_config
+from .index.repository import DatasetRepository
+from .io.paths import safe_slug
 from .provenance import create_snapshot, load_snapshot, verify_snapshot
 from .splits import audit_upstream_split, write_split_artifact
 
 app = typer.Typer(
     name="weldinfra",
-    help="Reproducibility, leakage-audit, benchmark, and experimental-split utilities.",
+    help="Reproducibility, leakage-audit, benchmark, alignment, and experimental-split utilities.",
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
 )
@@ -132,6 +135,27 @@ def benchmark_command(
     )
     destination = output or (config.reports_dir / "benchmark.json")
     write_benchmark_report(report, destination)
+    payload = report.to_dict()
+    payload["output"] = str(destination.expanduser().resolve())
+    console.print_json(data=payload)
+
+
+@app.command("alignment")
+def alignment_command(
+    workspace: WorkspaceOption,
+    sample_id: Annotated[str, typer.Option("--sample-id")],
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+) -> None:
+    """Estimate explicit audio/video/sensor onset offsets for one indexed sample."""
+    config = load_config(workspace)
+    sample = DatasetRepository(config.index_path, config.dataset_root).get_sample(sample_id)
+    if sample is None:
+        raise typer.BadParameter(f"Unknown sample: {sample_id}")
+    report = estimate_sample_alignment(sample)
+    destination = output or (
+        config.reports_dir / "alignment" / f"{safe_slug(sample_id)}.json"
+    )
+    write_alignment_report(report, destination)
     payload = report.to_dict()
     payload["output"] = str(destination.expanduser().resolve())
     console.print_json(data=payload)
