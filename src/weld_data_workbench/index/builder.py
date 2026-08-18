@@ -201,7 +201,10 @@ class IndexBuilder:
             for suffix in ("-wal", "-shm"):
                 Path(str(self.config.index_path) + suffix).unlink(missing_ok=True)
             os.replace(temporary, self.config.index_path)
-        except Exception:
+        except BaseException:
+            # Cleanup also covers KeyboardInterrupt/SystemExit. The exception is
+            # never swallowed; this block only preserves the previous atomic index
+            # and removes a partial `.building` database.
             connection.close()
             previous.close()
             for suffix in ("", "-wal", "-shm"):
