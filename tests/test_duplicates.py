@@ -10,14 +10,15 @@ from weld_data_workbench.index.repository import DatasetRepository
 from weld_data_workbench.real_schema_fixture import generate_real_schema_fixture
 
 
-def test_near_duplicate_scan_finds_cross_split_copied_image_bundle(tmp_path: Path) -> None:
+def test_near_duplicate_scan_finds_cross_split_copied_media(tmp_path: Path) -> None:
     raw = tmp_path / "raw"
     workspace = tmp_path / "workspace"
     generate_real_schema_fixture(raw)
 
-    source_dir = raw / "10_good_01_03-20-23_Fe410" / "04-03-23-0001-00" / "images"
-    target_dir = raw / "10_porosity_03-21-23_Fe410" / "04-03-23-0010-11" / "images"
-    shutil.copytree(source_dir, target_dir)
+    source_sample = raw / "10_good_01_03-20-23_Fe410" / "04-03-23-0001-00"
+    target_sample = raw / "10_porosity_03-21-23_Fe410" / "04-03-23-0010-11"
+    shutil.copytree(source_sample / "images", target_sample / "images")
+    shutil.copy2(source_sample / "weld.avi", target_sample / "weld.avi")
 
     config = init_workspace(raw, workspace)
     IndexBuilder(config).build(workers=2)
@@ -30,15 +31,20 @@ def test_near_duplicate_scan_finds_cross_split_copied_image_bundle(tmp_path: Pat
 
     first = scan_near_duplicates(
         config,
-        kinds=("image",),
+        kinds=("image", "video"),
         image_distance=0,
+        video_distance=0,
         cross_split_only=True,
         max_pairs=1_000,
     )
-    assert first.summary.assets_considered == 45
-    assert first.summary.signatures_computed == 45
+    # The fixture contains 45 image and 9 video assets after the copied image
+    # bundle is restored. The probe-level corrupt JPEG and corrupt AVI are already
+    # status=error, so perceptual hashing deliberately considers the 52 readable
+    # assets only; their corruption remains represented by the index issue table.
+    assert first.summary.assets_considered == 52
+    assert first.summary.signatures_computed == 52
     assert first.summary.signatures_reused == 0
-    assert first.summary.signature_failures == 1  # intentionally corrupt JPEG in the fixture
+    assert first.summary.signature_failures == 0
 
     expected_key = tuple(sorted((source_id, target_id)))
     matching = [
@@ -50,19 +56,21 @@ def test_near_duplicate_scan_finds_cross_split_copied_image_bundle(tmp_path: Pat
     pair = matching[0]
     assert pair["quality"] == "strong"
     assert pair["image_matches"] == 5
-    assert pair["video_matches"] == 0
+    assert pair["video_matches"] == 1
+    assert len(pair["evidence"]) == 6
     assert all(item["hamming_distance"] == 0 for item in pair["evidence"])
 
     second = scan_near_duplicates(
         config,
-        kinds=("image",),
+        kinds=("image", "video"),
         image_distance=0,
+        video_distance=0,
         cross_split_only=True,
         max_pairs=1_000,
     )
     assert second.summary.signatures_computed == 0
-    assert second.summary.signatures_reused == 45
-    assert second.summary.signature_failures == 1
+    assert second.summary.signatures_reused == 52
+    assert second.summary.signature_failures == 0
     assert any(
         (pair["sample_a"], pair["sample_b"]) == expected_key for pair in second.pairs
     )
