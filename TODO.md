@@ -17,7 +17,7 @@
 
 - [x] Add incremental re-indexing keyed by live asset path/size/mtime and optional trusted checksum, while preserving atomic index replacement.
 - [x] Add resumable per-sample/per-modality feature extraction with persistent job state and failure isolation.
-- [ ] Add ffprobe fallback for AVI files OpenCV cannot decode.
+- [x] Add ffprobe metadata fallback for AVI files OpenCV cannot open or validate, while keeping decode verification explicit.
 - [x] Add audio/video/sensor alignment diagnostics based on sensor transitions, audio onset, and illumination changes.
 - [x] Add explicit sensor time-axis normalization for numeric elapsed-time fields and the audited Date+Time/time-only forms; do not invent an unknown sampling rate.
 - [ ] Extend the time-axis parser only when additional real sensor encodings are observed and can be regression-tested.
