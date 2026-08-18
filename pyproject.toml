@@ -60,6 +60,9 @@ torch = [
 download = [
   "huggingface_hub>=0.23",
 ]
+benchmark = [
+  "httpx>=0.27",
+]
 dev = [
   "build>=1.2",
   "pytest>=8.2",
@@ -76,11 +79,13 @@ all = [
   "scikit-learn>=1.4",
   "joblib>=1.4",
   "huggingface_hub>=0.23",
+  "httpx>=0.27",
 ]
 
 [project.scripts]
 weldtool = "weld_data_workbench.cli:app"
 weldinfra = "weld_data_workbench.infrastructure_cli:app"
+weldbench = "weld_data_workbench.benchmark_suite:main"
 weldworkbench-gui = "weld_data_workbench.gui.app:main"
 
 [project.urls]
