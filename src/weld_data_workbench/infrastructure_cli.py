@@ -7,13 +7,14 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from .benchmark import run_repository_benchmark, write_benchmark_report
 from .config import load_config
 from .provenance import create_snapshot, load_snapshot, verify_snapshot
 from .splits import audit_upstream_split, write_split_artifact
 
 app = typer.Typer(
     name="weldinfra",
-    help="Reproducibility, leakage-audit, and experimental-split utilities.",
+    help="Reproducibility, leakage-audit, benchmark, and experimental-split utilities.",
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
 )
@@ -107,6 +108,33 @@ def split_create(
             "output": str(output.expanduser().resolve()),
         }
     )
+
+
+@app.command("benchmark")
+def benchmark_command(
+    workspace: WorkspaceOption,
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    iterations: int = typer.Option(50, min=1, max=10_000),
+    page_size: int = typer.Option(100, min=1, max=10_000),
+    snapshot: bool = typer.Option(
+        True,
+        "--snapshot/--no-snapshot",
+        help="Include the deterministic dataset snapshot ID in the report.",
+    ),
+) -> None:
+    """Measure reproducible repository/read-path performance and emit JSON."""
+    config = load_config(workspace)
+    report = run_repository_benchmark(
+        config,
+        iterations=iterations,
+        page_size=page_size,
+        include_snapshot=snapshot,
+    )
+    destination = output or (config.reports_dir / "benchmark.json")
+    write_benchmark_report(report, destination)
+    payload = report.to_dict()
+    payload["output"] = str(destination.expanduser().resolve())
+    console.print_json(data=payload)
 
 
 if __name__ == "__main__":
