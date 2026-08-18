@@ -40,15 +40,21 @@ jobs:
           src/weld_data_workbench/alignment.py
           src/weld_data_workbench/alignment_batch.py
           src/weld_data_workbench/benchmark.py
+          src/weld_data_workbench/benchmark_fixture.py
           src/weld_data_workbench/benchmark_suite.py
           src/weld_data_workbench/duplicates.py
           src/weld_data_workbench/evaluation.py
+          src/weld_data_workbench/execution.py
           src/weld_data_workbench/experiments.py
+          src/weld_data_workbench/fusion.py
           src/weld_data_workbench/policy_compare.py
+          src/weld_data_workbench/prediction_contract.py
           src/weld_data_workbench/provenance.py
           src/weld_data_workbench/real_schema_fixture.py
+          src/weld_data_workbench/runtime_tasks.py
           src/weld_data_workbench/splits.py
           src/weld_data_workbench/features/cache.py
+          src/weld_data_workbench/features/pipeline.py
           src/weld_data_workbench/index/incremental.py
       - name: Tests
         run: pytest -q --cov=weld_data_workbench --cov-report=term-missing --cov-report=xml
@@ -62,6 +68,51 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  benchmark-fixture-smoke:
+    name: Large fixture benchmark smoke
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[all,dev]"
+      - name: Generate and index deterministic large fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from weld_data_workbench.benchmark_fixture import generate_benchmark_fixture
+          summary = generate_benchmark_fixture(Path('/tmp/weld-benchmark-raw'), sessions=6, samples_per_session=8)
+          assert summary.samples == 48
+          print(summary)
+          PY
+          weldtool init --dataset-root /tmp/weld-benchmark-raw --workspace /tmp/weld-benchmark-workspace
+          weldtool scan --workspace /tmp/weld-benchmark-workspace --workers 2 --probe light
+      - name: Exercise comprehensive benchmark surface
+        run: |
+          weldbench \
+            --workspace /tmp/weld-benchmark-workspace \
+            --output /tmp/weld-benchmark-suite.json \
+            --scratch-scan \
+            --preview-samples 1 \
+            --feature-samples 2 \
+            --api-requests 8 \
+            --api-concurrency 2 \
+            --workers 2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/weld-benchmark-suite.json').read_text())
+          assert payload['base']['dataset']['samples'] == 48
+          assert payload['scratch_scan']['enabled'] is True
+          assert payload['api']['enabled'] is True
+          PY
 
   wheel-smoke:
     name: Clean wheel smoke
@@ -84,3 +135,41 @@ jobs:
           /tmp/weld-wheel-venv/bin/weldinfra --help
           /tmp/weld-wheel-venv/bin/weldbench --help
           /tmp/weld-wheel-venv/bin/weldtool synthetic --output /tmp/weld-synthetic
+
+  native-qml-smoke:
+    name: Native QML ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Qt and package dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install -e ".[api,dev]" "PySide6>=6.8"
+      - name: QML lint and parser smoke
+        shell: bash
+        run: |
+          pyside6-qmllint -I src/weld_data_workbench/gui/qml src/weld_data_workbench/gui/qml/Main.qml
+          python scripts/qml_syntax_smoke.py src/weld_data_workbench/gui/qml/Main.qml
+      - name: Build and clean-install wheel
+        shell: bash
+        run: |
+          python -m build --wheel
+          python -m venv "$RUNNER_TEMP/weld-native-venv"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            PY="$RUNNER_TEMP/weld-native-venv/Scripts/python.exe"
+            PIP="$RUNNER_TEMP/weld-native-venv/Scripts/pip.exe"
+          else
+            PY="$RUNNER_TEMP/weld-native-venv/bin/python"
+            PIP="$RUNNER_TEMP/weld-native-venv/bin/pip"
+          fi
+          "$PIP" install dist/*.whl
+          "$PY" -c "import weld_data_workbench; print(weld_data_workbench.__version__)"

@@ -15,46 +15,66 @@
 
 ## P1 — robust local data engineering
 
-- [x] Add incremental re-indexing keyed by live asset path/size/mtime and optional trusted checksum, while preserving atomic index replacement.
-- [x] Add resumable per-sample/per-modality feature extraction with persistent job state and failure isolation.
-- [x] Add ffprobe metadata fallback for AVI files OpenCV cannot open or validate, while keeping decode verification explicit.
-- [x] Add explicit sensor time-axis normalization for numeric elapsed-time fields and the audited Date+Time/time-only forms; do not invent an unknown sampling rate.
-- [ ] Extend the time-axis parser only when additional real sensor encodings are observed and can be regression-tested.
-- [x] Estimate audio/video/sensor welding onset and active interval/end, including explicit end-censoring when activity continues through recording end.
-- [x] Add dataset-wide alignment quality reports, per-session/category/split summaries, CSV export, and aggregate diagnostic plots.
-- [x] Expose per-sample alignment through the read-only FastAPI surface for the QML synchronized-timeline work.
-- [x] Add cached perceptual image/video near-duplicate candidate detection for cross-split leakage triage.
-- [x] Add deterministic dataset snapshots containing manifest and canonical semantic index hashes plus live-asset integrity checks.
-- [x] Add deterministic session-disjoint holdout and session-grouped K-fold utilities.
-- [x] Add official-versus-session-disjoint evaluation comparison for one immutable prediction set.
-- [x] Add crash/interruption tests proving failed rebuilds preserve the previous valid index.
-- [x] Add comprehensive machine-readable benchmarking for repository reads, scratch full/no-op scans, previews, feature extraction/cache reuse, and in-process API throughput.
-- [ ] Add a generated large benchmark fixture and collect stable real-machine baselines before introducing performance regression thresholds.
+- [x] Add crash-safe incremental re-indexing, no-op reuse, ffprobe fallback, and explicit scan statistics.
+- [x] Add resumable per-sample/per-modality handcrafted feature extraction with persistent cache state and bounded in-flight work.
+- [x] Add a persistent bounded/cancellable background-task layer for preview, feature, and alignment work.
+- [x] Add bounded spawn-process CPU queues and named device queues for future learned extractors.
+- [x] Add deterministic dataset snapshots and live-asset integrity checks.
+- [x] Add leakage audits, near-duplicate triage, deterministic session-disjoint holdout, grouped K-fold, and official-vs-session-disjoint comparison.
+- [x] Add explicit sensor time normalization plus multimodal onset/active-interval/end diagnostics with batch/session reports and plots.
+- [x] Add comprehensive machine-readable benchmarking for repository reads, scratch scans, previews, features/cache reuse, and API throughput.
+- [x] Add a generated many-sample benchmark fixture to public CI.
+- [ ] Collect stable real-machine benchmark baselines before introducing performance regression thresholds.
+- [ ] Extend sensor timestamp parsing only when additional real encodings are observed and regression-tested.
 
-## P1 — user interface
+## P1 — user interface and analysis services
 
-- [ ] Move preview/feature/alignment generation to cancellable background job queues.
-- [ ] Add synchronized playback cursor across video, audio waveform, and sensor plot using explicit alignment reports.
-- [ ] Add issue triage and user annotations in a separate overlay database.
-- [ ] Add compare mode for Good versus defective samples with matched process parameters.
-- [ ] Add histogram and pivot views by category, weld type, material, thickness, split, and session.
-- [ ] Add QML packaging and native smoke coverage for macOS and Windows.
+### Infrastructure complete without visual acceptance
 
-## P2 — research baselines and evaluation
+- [x] Expose background task progress/error/cancellation through FastAPI.
+- [x] Add native macOS/Windows QML lint/parser/package smoke.
 
-- [ ] Reproduce a bounded audio STFT autoencoder baseline.
-- [ ] Add video clip embeddings using a maintained pretrained video model.
-- [ ] Add post-weld-image anomaly and supervised baselines.
-- [ ] Add sensor-only time-series baselines.
-- [ ] Add calibrated late fusion with confidence intervals and missing-modality handling.
-- [x] Evaluate category-wise ROC AUC, PR AUC, equal-error rate, FNR at fixed FPR, and externally calibrated threshold stability.
-- [x] Add explicit session leakage audits and session-grouped bootstrap confidence intervals.
-- [x] Add a repository-native experiment/provenance registry tied to dataset snapshot and split artifact IDs.
-- [ ] Add inference latency/memory and missing-modality robustness to the common evaluation contract.
+### Remaining service-side work that can be implemented without visual acceptance
 
-## P2 — production-oriented extensions
+- [ ] Add a separate annotation/issue-disposition overlay database.
+- [ ] Add deterministic Good-vs-defect sample matching by process parameters.
+- [ ] Add histogram/pivot analytics service/API.
 
-- [ ] Introduce a stream simulator emitting RTSP/MQTT-compatible data without coupling it to the indexer.
-- [ ] Define an online event schema for anomaly scores and operator feedback.
-- [ ] Add model export adapters for ONNX/OpenVINO only after research baselines are stable.
+### Product/UI acceptance work
+
+- [ ] Add synchronized playback cursor and active-interval overlays across video/audio/sensor.
+- [ ] Add compare-mode, analytics, annotation, reconnect, and task-state presentation in QML.
+- [ ] Add deeper offscreen interaction tests after QML component boundaries stabilize.
+
+## P2 — prediction, evaluation, and model research
+
+### Infrastructure complete without model acceptance
+
+- [x] Add a common sample-oriented prediction schema with per-modality availability/reliability.
+- [x] Add per-row inference latency/process CPU/peak RSS/device/batch-size telemetry.
+- [x] Add missing-modality robustness evaluation.
+- [x] Add Good-training-only score standardization.
+- [x] Add fixed late fusion, row-wise missing-modality renormalization, and reliability-aware fusion.
+- [x] Add validation-only convex-weight tuning and unimodal/fusion ablation reporting.
+- [x] Retain category-wise ROC AUC, PR AUC, EER, FNR@FPR, threshold stability, session bootstrap, experiment registry, and provenance.
+
+### Research/model acceptance work
+
+- [ ] Choose and implement bounded audio STFT/autoencoder baseline.
+- [ ] Choose and implement sensor temporal baseline.
+- [ ] Choose maintained video embedding/anomaly baseline.
+- [ ] Choose maintained post-weld-image embedding/anomaly baseline.
+- [ ] Add learned fusion only after unimodal baselines are independently validated.
+
+## P3 — production-oriented extensions
+
+### Infrastructure-safe core
+
+- [ ] Add a transport-agnostic dataset replay plan/service.
+- [ ] Define stable anomaly-event and operator-feedback schemas.
+
+### Deployment/model-dependent work
+
+- [ ] Add RTSP/MQTT adapters only when a concrete deployment contract requires them.
+- [ ] Add ONNX/OpenVINO export adapters only after model correctness is stable.
 - [ ] Keep all commercial-use work blocked until dataset/model licensing is resolved in writing.

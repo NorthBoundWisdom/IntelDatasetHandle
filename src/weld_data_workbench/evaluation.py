@@ -6,6 +6,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .prediction_contract import (
+    DEFAULT_MODALITIES,
+    availability_pattern,
+    normalize_prediction_frame,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class MetricBundle:
@@ -175,13 +181,6 @@ def _threshold_stability(
     threshold: float | None,
     group_cols: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Measure group behavior at a threshold calibrated outside this evaluator.
-
-    The evaluator deliberately does not derive a classification threshold from the
-    frame it is evaluating. Callers should tune/calibrate on train/validation, then
-    pass the frozen threshold when evaluating validation/test or shift slices.
-    """
-
     if threshold is None:
         return {
             "threshold": None,
@@ -229,6 +228,110 @@ def _threshold_stability(
     }
 
 
+def _numeric_distribution(series: pd.Series) -> dict[str, float | int | None]:
+    values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return {
+            "count": 0,
+            "mean": None,
+            "median": None,
+            "p95": None,
+            "minimum": None,
+            "maximum": None,
+        }
+    return {
+        "count": int(values.size),
+        "mean": float(np.mean(values)),
+        "median": float(np.median(values)),
+        "p95": float(np.percentile(values, 95)),
+        "minimum": float(np.min(values)),
+        "maximum": float(np.max(values)),
+    }
+
+
+def evaluate_inference_telemetry(frame: pd.DataFrame) -> dict[str, Any]:
+    fields = {
+        "inference_latency_ms": "latency_ms",
+        "process_cpu_ms": "process_cpu_ms",
+        "peak_rss_mb": "peak_rss_mb",
+        "batch_size": "batch_size",
+    }
+    distributions = {
+        output: _numeric_distribution(frame[column])
+        for column, output in fields.items()
+        if column in frame.columns
+    }
+    devices = (
+        frame["device"].fillna("Unknown").astype(str).value_counts().sort_index().to_dict()
+        if "device" in frame.columns
+        else {}
+    )
+    return {
+        "available": bool(distributions or devices),
+        "distributions": distributions,
+        "device_counts": {str(key): int(value) for key, value in devices.items()},
+    }
+
+
+def evaluate_missing_modality_robustness(
+    frame: pd.DataFrame,
+    *,
+    score_col: str = "anomaly_score",
+    label_col: str = "is_anomaly",
+    modalities: tuple[str, ...] = DEFAULT_MODALITIES,
+    fpr_targets: tuple[float, ...] = (0.001, 0.01, 0.05),
+    minimum_pattern_samples: int = 1,
+) -> dict[str, Any]:
+    if score_col not in frame.columns or label_col not in frame.columns:
+        raise ValueError("Missing-modality evaluation requires score and label columns")
+    availability_columns = [f"available_{modality}" for modality in modalities]
+    score_columns = [f"score_{modality}" for modality in modalities]
+    if not any(column in frame.columns for column in (*availability_columns, *score_columns)):
+        return {
+            "available": False,
+            "reason": "no modality availability or per-modality score columns",
+            "patterns": {},
+        }
+
+    clean = normalize_prediction_frame(frame, modalities=modalities, require_labels=True)
+    clean["_availability_pattern"] = clean.apply(
+        lambda row: availability_pattern(row, modalities), axis=1
+    )
+    overall = _metric_bundle(
+        clean[label_col].to_numpy(dtype=int),
+        clean[score_col].to_numpy(dtype=float),
+        fpr_targets=fpr_targets,
+    ).to_dict()
+    overall_auc = overall["roc_auc"]
+
+    patterns: dict[str, Any] = {}
+    for pattern, subset in clean.groupby("_availability_pattern", sort=True):
+        if len(subset) < minimum_pattern_samples:
+            continue
+        metrics = _metric_bundle(
+            subset[label_col].to_numpy(dtype=int),
+            subset[score_col].to_numpy(dtype=float),
+            fpr_targets=fpr_targets,
+        ).to_dict()
+        pattern_auc = metrics["roc_auc"]
+        metrics["roc_auc_delta_from_overall"] = (
+            float(pattern_auc - overall_auc)
+            if pattern_auc is not None and overall_auc is not None
+            else None
+        )
+        metrics["fraction_of_rows"] = float(len(subset) / len(clean)) if len(clean) else 0.0
+        patterns[str(pattern)] = metrics
+
+    return {
+        "available": True,
+        "overall": overall,
+        "patterns": patterns,
+        "pattern_count": len(patterns),
+        "modalities": list(modalities),
+    }
+
+
 def evaluate_anomaly_predictions(
     frame: pd.DataFrame,
     *,
@@ -246,25 +349,20 @@ def evaluate_anomaly_predictions(
         "steel_type",
         "thickness_mm",
     ),
+    missing_modality_modalities: tuple[str, ...] = DEFAULT_MODALITIES,
 ) -> dict[str, Any]:
-    """Evaluate anomaly scores where larger values mean more anomalous/defective.
-
-    `threshold`, when supplied, must be calibrated outside the evaluation frame
-    (normally on training/validation data). It is used only to measure operating-
-    point stability across acquisition/process groups; no test-set threshold tuning
-    occurs here.
-    """
-
     required = {score_col, label_col}
     missing = required - set(frame.columns)
     if missing:
         raise ValueError(f"Missing prediction columns: {sorted(missing)}")
 
-    clean = frame.copy()
-    clean[label_col] = pd.to_numeric(clean[label_col], errors="raise").astype(int)
-    if not clean[label_col].isin([0, 1]).all():
-        raise ValueError(f"{label_col} must contain only 0/1 values")
-    clean[score_col] = pd.to_numeric(clean[score_col], errors="coerce")
+    clean = normalize_prediction_frame(
+        frame,
+        modalities=missing_modality_modalities,
+        require_labels=True,
+        score_col=score_col,
+        label_col=label_col,
+    )
 
     overall = _metric_bundle(
         clean[label_col].to_numpy(dtype=int),
@@ -297,6 +395,14 @@ def evaluate_anomaly_predictions(
         threshold=threshold,
         group_cols=threshold_group_cols,
     )
+    missing_modality = evaluate_missing_modality_robustness(
+        clean,
+        score_col=score_col,
+        label_col=label_col,
+        modalities=missing_modality_modalities,
+        fpr_targets=fpr_targets,
+    )
+    telemetry = evaluate_inference_telemetry(clean)
 
     return {
         "metric_schema_version": 2,
@@ -305,5 +411,7 @@ def evaluate_anomaly_predictions(
         "by_category": by_category,
         "session_grouped_roc_auc_95ci": bootstrap,
         "threshold_stability": threshold_stability,
+        "missing_modality_robustness": missing_modality,
+        "inference_telemetry": telemetry,
         "fpr_targets": list(fpr_targets),
     }

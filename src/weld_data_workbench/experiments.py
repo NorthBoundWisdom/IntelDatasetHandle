@@ -13,6 +13,8 @@ from typing import Any
 
 import pandas as pd
 
+from .prediction_contract import normalize_prediction_frame, prediction_metadata
+
 
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -68,6 +70,10 @@ class ExperimentHandle:
         return self.root / "predictions.parquet"
 
     @property
+    def prediction_metadata_path(self) -> Path:
+        return self.root / "predictions.meta.json"
+
+    @property
     def metrics_path(self) -> Path:
         return self.root / "metrics.json"
 
@@ -119,7 +125,7 @@ class ExperimentRegistry:
             encoding="utf-8",
         )
         provenance = {
-            "experiment_schema_version": 1,
+            "experiment_schema_version": 2,
             "experiment_id": experiment_id,
             "created_at": now.isoformat(),
             "dataset_snapshot_id": dataset_snapshot_id,
@@ -127,6 +133,7 @@ class ExperimentRegistry:
             "git_sha": git_sha,
             "seeds": seeds or {},
             "notes": notes,
+            "prediction_contract": "sample-oriented-v1",
         }
         handle.provenance_path.write_text(
             json.dumps(provenance, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
@@ -139,13 +146,30 @@ class ExperimentRegistry:
         return handle
 
     @staticmethod
-    def write_predictions(handle: ExperimentHandle, frame: pd.DataFrame) -> Path:
+    def write_predictions(
+        handle: ExperimentHandle,
+        frame: pd.DataFrame,
+        *,
+        model_name: str = "unspecified",
+        modalities: tuple[str, ...] = (),
+        metadata_extra: dict[str, Any] | None = None,
+    ) -> Path:
+        normalized = normalize_prediction_frame(frame)
+        metadata_payload = prediction_metadata(
+            model_name=model_name,
+            modalities=modalities,
+            extra=metadata_extra,
+        )
+        handle.prediction_metadata_path.write_text(
+            json.dumps(metadata_payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         try:
-            frame.to_parquet(handle.predictions_path, index=False)
+            normalized.to_parquet(handle.predictions_path, index=False)
             return handle.predictions_path
         except (ImportError, ModuleNotFoundError):
             fallback = handle.root / "predictions.csv"
-            frame.to_csv(fallback, index=False)
+            normalized.to_csv(fallback, index=False)
             return fallback
 
     @staticmethod

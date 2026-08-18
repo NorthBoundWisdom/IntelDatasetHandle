@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -21,6 +21,10 @@ from .cache import (
 from .images import extract_image_features
 from .sensor import extract_sensor_features
 from .video import extract_video_features
+
+
+class FeatureExtractionCancelled(RuntimeError):
+    pass
 
 
 @dataclass(slots=True)
@@ -39,6 +43,7 @@ class FeatureExtractionSummary:
 
 
 ProgressCallback = Callable[[int, int, str], None]
+CancelCallback = Callable[[], bool]
 
 _MODALITY_ORDER = ("audio", "video", "sensor", "image")
 
@@ -84,22 +89,22 @@ class FeatureExtractor:
             paths = cls._paths(sample, "audio")
             if not paths:
                 raise FileNotFoundError("missing audio asset")
-            return extract_audio_features(paths[0])
+            return cast(dict[str, object], extract_audio_features(paths[0]))
         if modality == "video":
             paths = cls._paths(sample, "video")
             if not paths:
                 raise FileNotFoundError("missing video asset")
-            return extract_video_features(paths[0])
+            return cast(dict[str, object], extract_video_features(paths[0]))
         if modality == "sensor":
             paths = cls._paths(sample, "sensor")
             if not paths:
                 raise FileNotFoundError("missing sensor asset")
-            return extract_sensor_features(paths[0])
+            return cast(dict[str, object], extract_sensor_features(paths[0]))
         if modality == "image":
             paths = cls._paths(sample, "image")
             if not paths:
                 raise FileNotFoundError("missing image assets")
-            return extract_image_features(paths)
+            return cast(dict[str, object], extract_image_features(paths))
         raise ValueError(f"Unsupported modality: {modality}")
 
     @classmethod
@@ -128,9 +133,6 @@ class FeatureExtractor:
 
     @staticmethod
     def _extractor_config(modality: str) -> dict[str, object]:
-        # The current handcrafted extractors have no user-facing parameters. Keep
-        # this hook explicit so future window sizes/model names participate in the
-        # cache key without making output paths or worker counts invalidate work.
         return {"modality": modality, "bounded": True}
 
     def _plan_sample(
@@ -165,10 +167,14 @@ class FeatureExtractor:
         workers: int | None = None,
         progress: ProgressCallback | None = None,
         force: bool = False,
+        cancel_requested: CancelCallback | None = None,
+        max_inflight_factor: int = 2,
     ) -> FeatureExtractionSummary:
         selected = self._normalize_modalities(modalities)
         if not selected:
             raise ValueError("At least one modality must be selected")
+        if max_inflight_factor < 1:
+            raise ValueError("max_inflight_factor must be at least 1")
 
         rows = list(
             self.repository.iter_samples(
@@ -191,8 +197,6 @@ class FeatureExtractor:
         for sample_id in sample_ids:
             sample = self.repository.get_sample(sample_id)
             if sample is None:
-                # A concurrently replaced index can theoretically remove a sample
-                # between list and detail reads. Preserve an explicit failed row.
                 sample = {
                     "sample_id": sample_id,
                     "session_id": None,
@@ -209,56 +213,99 @@ class FeatureExtractor:
             jobs_reused += len(selected) - len(pending_modalities)
 
         worker_count = workers or self.config.scan.workers
-        futures: dict[Future[dict[str, tuple[dict[str, object] | None, str | None]]], str] = {}
+        worker_count = max(1, int(worker_count))
+        max_inflight = worker_count * max_inflight_factor
         completed_samples = 0
         jobs_executed = 0
+        futures: dict[Future[dict[str, tuple[dict[str, object] | None, str | None]]], str] = {}
+        next_index = 0
+        cancelled = False
+
+        def is_cancelled() -> bool:
+            return bool(cancel_requested and cancel_requested())
+
+        def emit_progress(sample_id: str) -> None:
+            nonlocal completed_samples
+            completed_samples += 1
+            if progress:
+                progress(completed_samples, total, sample_id)
+
+        def store_result(
+            sample_id: str,
+            future: Future[dict[str, tuple[dict[str, object] | None, str | None]]],
+        ) -> None:
+            modalities_to_run = pending[sample_id]
+            try:
+                results = future.result()
+            except Exception as exc:
+                message = f"{type(exc).__name__}: {exc}"
+                for modality in modalities_to_run:
+                    self.cache.store_failure(plans[sample_id][modality], message)
+            else:
+                for modality in modalities_to_run:
+                    features, error = results.get(
+                        modality,
+                        (None, "worker did not return modality result"),
+                    )
+                    if error is not None or features is None:
+                        self.cache.store_failure(
+                            plans[sample_id][modality],
+                            error or "empty feature result",
+                        )
+                    else:
+                        self.cache.store_success(plans[sample_id][modality], features)
+            emit_progress(sample_id)
 
         with ThreadPoolExecutor(
             max_workers=worker_count, thread_name_prefix="weld-features"
         ) as executor:
-            for sample_id in sample_ids:
-                modalities_to_run = pending[sample_id]
-                if not modalities_to_run:
-                    completed_samples += 1
-                    if progress:
-                        progress(completed_samples, total, sample_id)
-                    continue
-                for modality in modalities_to_run:
-                    self.cache.mark_running(plans[sample_id][modality])
-                jobs_executed += len(modalities_to_run)
-                futures[
-                    executor.submit(
-                        self._execute_sample,
-                        samples[sample_id],
-                        modalities_to_run,
-                    )
-                ] = sample_id
+            while next_index < len(sample_ids) or futures:
+                if is_cancelled():
+                    cancelled = True
+                    for future in futures:
+                        future.cancel()
+                    break
 
-            for future in as_completed(futures):
-                sample_id = futures[future]
-                modalities_to_run = pending[sample_id]
-                try:
-                    results = future.result()
-                except Exception as exc:
-                    message = f"{type(exc).__name__}: {exc}"
+                while next_index < len(sample_ids) and len(futures) < max_inflight:
+                    sample_id = sample_ids[next_index]
+                    next_index += 1
+                    modalities_to_run = pending[sample_id]
+                    if not modalities_to_run:
+                        emit_progress(sample_id)
+                        continue
                     for modality in modalities_to_run:
-                        self.cache.store_failure(plans[sample_id][modality], message)
-                else:
-                    for modality in modalities_to_run:
-                        features, error = results.get(
-                            modality,
-                            (None, "worker did not return modality result"),
+                        self.cache.mark_running(plans[sample_id][modality])
+                    jobs_executed += len(modalities_to_run)
+                    futures[
+                        executor.submit(
+                            self._execute_sample,
+                            samples[sample_id],
+                            modalities_to_run,
                         )
-                        if error is not None or features is None:
+                    ] = sample_id
+
+                if not futures:
+                    continue
+                done, _not_done = wait(tuple(futures), return_when=FIRST_COMPLETED)
+                for future in done:
+                    sample_id = futures.pop(future)
+                    store_result(sample_id, future)
+
+            if cancelled:
+                for future, sample_id in list(futures.items()):
+                    if future.done() and not future.cancelled():
+                        store_result(sample_id, future)
+                    else:
+                        for modality in pending[sample_id]:
                             self.cache.store_failure(
-                                plans[sample_id][modality],
-                                error or "empty feature result",
+                                plans[sample_id][modality], "Feature extraction cancelled"
                             )
-                        else:
-                            self.cache.store_success(plans[sample_id][modality], features)
-                completed_samples += 1
-                if progress:
-                    progress(completed_samples, total, sample_id)
+                futures.clear()
+
+        if cancelled:
+            raise FeatureExtractionCancelled(
+                f"Feature extraction cancelled after {completed_samples}/{total} samples"
+            )
 
         extracted: list[dict[str, object]] = []
         jobs_failed = 0

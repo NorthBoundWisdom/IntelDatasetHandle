@@ -11,10 +11,14 @@ This roadmap tracks the infrastructure phase after the first successful integrat
 - Public FLAC assets are mono 16 kHz PCM-16.
 - The upstream train/validation/test counts match the paper, but 216 session IDs cross official split boundaries.
 - Cached image/video perceptual hashes support bounded near-duplicate leakage triage, and one immutable prediction set can be compared under upstream and session-disjoint policies.
-- Multimodal timing analysis now estimates start/end/active duration, explicitly marks right-censored recording ends, and supports batch/session quality reports plus diagnostic plots.
+- Multimodal timing analysis estimates start/end/active duration, explicitly marks right-censored recording ends, and supports batch/session quality reports plus diagnostic plots.
+- Preview, feature, and alignment work can run through a persistent bounded/cancellable background-task layer instead of blocking UI/API callers.
+- Learned CPU/device execution has explicit bounded process/device queues and backpressure rather than an unbounded thread submission model.
+- A common sample-oriented prediction contract now carries per-modality availability/reliability and inference latency/memory metadata.
+- Fixed late fusion, Good-training-only standardization, validation-only convex-weight tuning, and reliability-aware missing-modality fusion are implemented as model-independent utilities.
+- Missing-modality robustness and inference telemetry are part of the unified evaluator.
 - The comprehensive benchmark suite measures repository queries, scratch full/no-op scans, preview generation/cache reuse, per-modality feature throughput/cache reuse, and in-process API throughput.
-- CLI, SQLite repository, validation, preview generation, resumable handcrafted features, Isolation Forest baseline, FastAPI, native QML, FreeCM workflow, experiment/evaluation utilities, and synthetic/real-schema fixtures are present.
-- Public CI runs Linux Python 3.11/3.12/3.13, Ruff, formatting, compileall, scoped mypy, pytest with an 80% core coverage gate, synthetic smoke, wheel build, and clean-wheel CLI smoke.
+- Public CI includes Linux Python 3.11/3.12/3.13, generated large-fixture benchmark smoke, clean-wheel smoke, and native macOS/Windows QML lint/parser/package smoke.
 
 The high-level rule remains: **do not optimize research metrics until dataset identity, split semantics, provenance, timing semantics, and evaluation contracts are reproducible.**
 
@@ -25,227 +29,202 @@ The high-level rule remains: **do not optimize research metrics until dataset id
 - [x] Add GitHub Actions CI for Linux on Python 3.11, 3.12, and 3.13.
 - [x] Run Ruff, formatting checks, scoped infrastructure mypy, compileall, pytest, and the synthetic smoke workflow in CI.
 - [x] Build a wheel and install it into a clean environment as a packaging smoke test.
-- [ ] Add a macOS job for native Qt/QML launcher and `qmllint` smoke when Qt is available.
+- [x] Add native macOS and Windows Qt/QML lint/parser/package smoke with PySide6.
 - [x] Produce pytest coverage reports and enforce an 80% core-package coverage gate; command adapters/QML and optional torch-only modules are excluded from the initial denominator.
 - [x] Cache pip artifacts without caching generated dataset/workspace state.
 
 ### Exit criteria
 
-Linux/headless core code has a public CI gate without access to the gated Intel dataset. Remaining P0-A work is native Qt/QML CI coverage on macOS.
+Delivered for public CI. Visual QML correctness remains a product/UI acceptance concern rather than a parser/package CI concern.
 
 ---
 
 ## P0-B — deterministic dataset snapshots and provenance
 
 - [x] Add `weldinfra snapshot-create` and `weldinfra snapshot-verify`.
-- [x] Define a deterministic snapshot document containing:
-  - schema version;
-  - manifest relative path and SHA-256;
-  - archive SHA-256 when explicitly supplied;
-  - canonical semantic index hash;
-  - sample/session/asset counts;
-  - category × split distribution;
-  - modality counts and missingness;
-  - audio sample-rate/channel distribution;
-  - video codec/FPS/resolution distribution;
-  - sensor schema distribution;
-  - live indexed-asset stat integrity;
-  - creation tool version.
+- [x] Define a deterministic snapshot document containing schema version, manifest hash, optional archive hash, canonical semantic index hash, distributions, media/schema distributions, live asset integrity, and tool version.
 - [x] Derive a stable `snapshot_id` from canonical snapshot content rather than timestamps or raw SQLite page bytes.
 - [x] Make experiment provenance reference `snapshot_id` rather than only a filesystem path.
 - [x] Detect changed manifest/index semantics and live missing/stat-drifted assets during snapshot verification.
 
 ### Exit criteria
 
-Delivered for the indexed/local dataset boundary. Snapshot verification intentionally does not hash all 40 GB of media by default; full asset SHA-256 remains an explicit expensive scan option.
+Delivered for the indexed/local dataset boundary. Full-media SHA-256 remains an explicit expensive option rather than a default 40 GB scan cost.
 
 ---
 
 ## P0-C — crash safety, restartability, and incremental indexing
 
 - [x] Add incremental re-indexing keyed by indexed metadata plus live asset `relpath`, size, mtime, and optional trusted SHA-256.
-- [x] Preserve the atomic `index.sqlite3.building -> index.sqlite3` replacement contract.
-- [x] Add failure/restart tests covering SQLite write failure, stale `.building`, `KeyboardInterrupt`, and reading the old active index while a replacement is built.
-- [x] Keep probe/codec failure isolated to the affected candidate rather than aborting unrelated samples.
-- [x] Add ffprobe metadata fallback for AVI assets that OpenCV cannot open or validate, without treating metadata fallback as decode verification.
-- [x] Verify that failed/interrupted rebuilds leave the previous index queryable and remove temporary WAL/SHM/building files.
-- [x] Make a no-op incremental scan avoid reopening unchanged media codecs.
-- [x] Record scan statistics for added, reused, reprobed, removed, and failed samples.
-- [x] Add an explicit `added_sample_count` field to the build summary and persisted incremental summary.
+- [x] Preserve atomic `index.sqlite3.building -> index.sqlite3` replacement.
+- [x] Add failure/restart tests for SQLite write failure, stale `.building`, interruption, and concurrent reads of the old active index.
+- [x] Keep probe/codec failure isolated to the affected candidate.
+- [x] Add ffprobe metadata fallback for AVI assets OpenCV cannot open/validate without treating metadata readability as decode verification.
+- [x] Verify failed rebuilds leave the previous index queryable and clean WAL/SHM/building state.
+- [x] Make no-op incremental scans avoid reopening unchanged codecs.
+- [x] Record added/reused/reprobed/removed/failed counts.
 
 ### Exit criteria
 
-The core restart/atomicity and incremental reporting contract is implemented. Remaining work here is real-dataset performance measurement rather than correctness plumbing.
+Correctness plumbing is complete; remaining scan work is real-dataset measurement/optimization when evidence warrants it.
 
 ---
 
 ## P0-D — real-schema regression fixture
 
-- [x] Add a generated mini fixture whose manifest/path/schema shape mirrors the audited public archive and contains no Intel media bytes.
-- [x] Preserve audited sensor column names and representative 30/31 FPS behavior.
-- [x] Include malformed/edge variants:
-  - missing five-image bundle;
-  - corrupt AVI/FLAC/CSV/JPEG;
-  - duplicate sample basename across sessions;
-  - extra/unknown sensor columns;
-  - missing sensor columns;
-  - unexpected audio rate;
-  - session crossing splits.
-- [x] Add regression assertions for normalized counts, path semantics, duplicate basename handling, and stable issue codes.
+- [x] Add a generated mini fixture mirroring audited manifest/path/schema shape without Intel media bytes.
+- [x] Preserve audited sensor columns and representative 30/31 FPS behavior.
+- [x] Include missing/corrupt media, duplicate basename, sensor-schema variation, audio-rate variation, and cross-split-session cases.
+- [x] Add regression assertions for normalized counts, path semantics, duplicate handling, and stable issue codes.
 - [x] Keep real Intel samples, screenshots, derived previews, and trained checkpoints out of Git.
-
-### Exit criteria
-
-Delivered for current audited schema. Extend the fixture whenever a new real-archive edge case is discovered.
 
 ---
 
 ## P0-E — leakage-resistant split infrastructure
 
-The published `split` remains immutable upstream annotation; experimental assignments are standalone artifacts.
-
 - [x] Keep upstream split annotations separate from generated experimental split artifacts.
-- [x] Add leakage audit for sessions crossing partitions and exact asset hashes when SHA-256 is available.
-- [x] Add cached, bounded perceptual image/video near-duplicate candidate detection across partitions; exact hashes alone are insufficient for acquisition leakage.
-- [x] Add deterministic session-disjoint holdout generation with explicit random seed.
-- [x] Add session-grouped K-fold utilities.
-- [x] Add a deterministic balanced holdout heuristic that keeps whole sessions while approximating sample/category targets; retain hash assignment as a simpler fallback.
-- [x] Export split assignments as versioned standalone artifacts rather than rewriting raw annotations.
-- [x] Add a top-level comparison report that evaluates one immutable prediction set under official-split and session-disjoint policies side by side.
-
-### Exit criteria
-
-Delivered for the current split/evaluation boundary: direct session overlap is prevented in generated policies, perceptual duplicate candidates are triageable, and upstream-vs-grouped evaluation is reportable without refitting or silently tuning thresholds on test data.
+- [x] Audit sessions and exact hashes across partitions.
+- [x] Add cached bounded perceptual image/video near-duplicate triage.
+- [x] Add deterministic session-disjoint holdout generation and grouped K-fold utilities.
+- [x] Add balanced session-level holdout heuristic while retaining deterministic hash assignment as a simpler fallback.
+- [x] Export versioned split artifacts rather than rewriting raw annotations.
+- [x] Compare one immutable prediction set under official and session-disjoint policies side by side.
 
 ---
 
-## P1-A — resumable derivative/feature job system
+## P1-A — derivative jobs, task scheduling, and backpressure
 
-- [x] Replace monolithic feature extraction with persistent per-sample/per-modality job state in a separate workspace SQLite database.
-- [x] Cache key = live modality fingerprint + extractor name + extractor version + canonical extractor config hash.
-- [x] Track `pending`, `running`, `success`, `failed`, and `stale` states.
-- [x] Recover interrupted `running` jobs and reuse already successful jobs.
-- [x] Isolate failures so one corrupt modality/sample does not abort unrelated extraction.
-- [x] Support per-modality invalidation; touching one audio asset invalidates only that audio job.
-- [ ] Use bounded process/device queues for CPU/GPU-heavy learned extractors instead of extending the current thread pool.
+- [x] Persist per-sample/per-modality handcrafted feature job state in a separate workspace SQLite database.
+- [x] Cache by live modality fingerprint + extractor name + extractor version + canonical config hash.
+- [x] Track pending/running/success/failed/stale and recover interrupted feature jobs.
+- [x] Isolate corrupt modality/sample failures.
+- [x] Support per-modality invalidation.
+- [x] Bound handcrafted feature futures in flight rather than scheduling all samples at once.
+- [x] Add a separate persistent background-task database for preview/feature/alignment operations.
+- [x] Add task progress, result/error state, restart recovery, queue backpressure, and cooperative cancellation.
+- [x] Add bounded spawn-process CPU queues and named device queues for future learned extractors/models.
 
 ### Exit criteria
 
-Delivered for current handcrafted feature extractors. Learned CPU/GPU extractors need a separate process/device scheduler.
+Execution infrastructure is complete enough for future learned extractors. Specific Torch/OpenVINO model worker implementations remain model work, not generic scheduler work.
 
 ---
 
 ## P1-B — benchmark and regression harness
 
 - [x] Add lightweight `weldinfra benchmark` repository/read-path JSON reports.
-- [x] Add comprehensive `weldbench` / `benchmark_suite` report for expensive and modality-level measurements.
-- [x] Measure full light-scan wall time in an explicit scratch benchmark workspace when requested.
-- [x] Measure immediate no-op incremental-scan wall time and verify all unchanged samples are reused.
-- [x] Measure process peak RSS where the platform exposes it.
-- [x] Measure SQLite size.
-- [x] Measure sample-list and sample-detail P50/P95 latency.
-- [x] Measure preview-generation latency by modality plus cold/warm bundle-cache behavior.
-- [x] Measure handcrafted per-modality feature throughput and warm cache reuse.
-- [x] Measure concurrent in-process FastAPI read throughput and request latency.
-- [ ] Add a generated large synthetic benchmark fixture in CI; keep the real 40 GB dataset local/nightly only.
-- [x] Store benchmark metadata with platform, Python version, git SHA, and snapshot ID.
-- [ ] Add regression thresholds only after stable baselines are collected on the main development machine.
+- [x] Add comprehensive `weldbench` report.
+- [x] Measure scratch full light scan and immediate no-op incremental scan.
+- [x] Measure peak RSS where available, SQLite size, sample-list/detail P50/P95 latency, preview latency/cache reuse, feature throughput/cache reuse, and concurrent in-process API throughput.
+- [x] Add a deterministic generated large benchmark fixture in CI without Intel bytes.
+- [x] Store benchmark platform/Python/git/snapshot metadata.
+- [ ] Add performance regression thresholds only after stable baselines are collected on the main development machine.
 
 ### Exit criteria
 
-The measurement surface is implemented. Remaining work is baseline collection, a larger deterministic CI fixture, and conservative regression threshold policy rather than additional timing plumbing.
+Measurement plumbing and a nontrivial public CI fixture are complete. Real-machine threshold selection intentionally remains evidence-driven.
 
 ---
 
 ## P1-C — multimodal alignment diagnostics
 
-- [x] Resolve explicit sensor time axes from numeric elapsed-time fields or known Date+Time/time-only encodings without inventing an unknown sample rate.
-- [x] Estimate welding onset from sensor current/voltage transitions, audio framed RMS, and video illumination/arc change.
-- [x] Estimate welding end/active interval in each modality using sustained-release logic and short-gap bridging.
-- [x] Explicitly report `end_censored` when activity continues to the end of the observed recording instead of pretending a physical weld end was observed.
-- [x] Report per-modality start offsets, end offsets, duration, confidence, method, and diagnostic details.
-- [x] Report per-sample start/end/duration spread and a coarse quality classification for triage.
-- [x] Build generated tests with known sensor/audio/video onset and release times plus bounded-error assertions.
-- [x] Parse the audited `%m-%d-%y %H:%M:%S.%f` sensor timestamp shape explicitly before mixed-format fallback.
-- [x] Add `weldinfra alignment-batch` with category/split/health/query filtering, bounded parallelism, deterministic sample order, JSON and CSV output.
-- [x] Add category/split/session aggregate summaries, modality success/error/censoring statistics, and worst-session triage.
-- [x] Add aggregate start-offset, start-spread, and active-duration PNG diagnostics.
-- [x] Expose per-sample alignment through `/api/samples/{sample_id}/alignment` for UI integration.
-- [x] Keep alignment as an explicit derived report; never silently shift raw media.
-
-### Exit criteria
-
-The data-side alignment contract is complete enough for UI synchronization and research diagnostics. Future algorithm changes should be driven by observed real-data failure modes rather than speculative timestamp formats or hidden automatic shifts.
+- [x] Resolve explicit sensor time axes without inventing unknown sample rates.
+- [x] Estimate welding onset and active interval/end from sensor, audio, and video.
+- [x] Mark right-censored ends explicitly.
+- [x] Report start/end offsets, duration, confidence, methods, spread, and quality.
+- [x] Add generated bounded-error alignment tests and audited Date+Time parsing.
+- [x] Add dataset-wide alignment batch reports, filters, JSON/CSV output, category/split/session aggregation, and diagnostic plots.
+- [x] Expose per-sample alignment through the API.
+- [x] Keep alignment as explicit derived state; never silently shift raw media.
 
 ---
 
-## P1-D — QML workbench testability and analysis UX
+## P1-D — QML workbench and analysis UX
 
-- [ ] Move preview/feature/alignment jobs to cancellable background tasks.
-- [ ] Add synchronized video/audio/sensor timeline playback using the explicit schema-v2 alignment interval/offset metadata.
-- [ ] Add Good-versus-defect compare mode matched by process parameters.
-- [ ] Add histogram/pivot exploration by category, weld type, steel, thickness, split, and session.
-- [ ] Add issue triage and user annotations in a separate overlay database.
-- [ ] Add API disconnect/reconnect behavior and visible task/error state.
-- [ ] Add QML/offscreen tests for filtering, pagination, selection, seek, media errors, and shutdown.
-- [ ] Add macOS and Windows packaging smoke tests.
+### Infrastructure-safe work
+
+- [x] Move preview/feature/alignment work behind a cancellable persistent background-task API while retaining synchronous compatibility endpoints.
+- [x] Add native macOS/Windows QML lint/parser/package smoke.
+
+### Product/UI acceptance work
+
+- [ ] Add synchronized video/audio/sensor timeline playback using schema-v2 alignment intervals and offsets.
+- [ ] Add Good-versus-defect compare presentation matched by process parameters.
+- [ ] Add histogram/pivot exploration UI.
+- [ ] Add issue-triage/annotation UI.
+- [ ] Add API disconnect/reconnect and visible task/error presentation.
+- [ ] Add deeper QML interaction tests for filtering, pagination, selection, seek, media errors, and shutdown once component boundaries are stabilized.
+
+The data/service implementations for compare, analytics, and annotations can be built independently of visual acceptance; only the final QML presentation remains acceptance-sensitive.
 
 ---
 
 ## P2-A — experiment registry and evaluation contract
 
-- [x] Add a lightweight repository-native experiment registry rather than requiring an external MLflow service.
-- [x] Persist experiment config/provenance/environment/predictions/metrics with snapshot ID, split artifact ID, git SHA, dependency environment, and random seeds.
-- [x] Add unified ROC AUC, PR AUC, equal-error rate, FNR-at-fixed-FPR, category-wise metrics, and session-grouped bootstrap ROC-AUC confidence intervals.
-- [x] Add externally calibrated fixed-threshold operating-point analysis by session, weld type, steel type, and thickness, including FPR/FNR range summaries.
-- [ ] Add missing-modality robustness evaluation.
-- [ ] Add inference latency/memory fields to the common prediction/evaluation contract.
-- [x] Add paired official-split versus session-disjoint comparison reports for one immutable prediction set.
+- [x] Add repository-native experiment registry.
+- [x] Persist config/provenance/environment/predictions/metrics with snapshot ID, split artifact ID, git SHA, dependency environment, and seeds.
+- [x] Add ROC AUC, PR AUC, EER, FNR-at-fixed-FPR, category metrics, and session-grouped bootstrap ROC-AUC confidence intervals.
+- [x] Add externally calibrated fixed-threshold group stability analysis.
+- [x] Add common per-row inference latency/process CPU/peak RSS/device/batch-size fields.
+- [x] Add missing-modality robustness evaluation by actual availability pattern.
+- [x] Add paired official-split versus session-disjoint reports for one immutable prediction set.
 
-Thresholds must be calibrated outside the evaluation frame (normally train/validation). The evaluator never tunes an operating threshold on the test frame.
+Thresholds are calibrated outside the evaluation frame. The evaluator never tunes an operating threshold on test rows.
 
 ---
 
-## P2-B — stronger unimodal baselines
+## P2-B — unimodal prediction contract and future baselines
 
-Only after the measurement and UI-analysis boundaries are stable:
+### Infrastructure-safe work
+
+- [x] Add a common sample-oriented prediction schema for unimodal/fused models.
+- [x] Normalize modality availability and bounded reliability values.
+- [x] Add prediction artifact metadata sidecars and inference telemetry helpers.
+
+### Research/model acceptance work
 
 - [ ] Audio log-STFT + bounded convolutional/shallow autoencoder baseline.
-- [ ] Sensor-only statistical and temporal baselines.
-- [ ] Frozen maintained video embedding + reconstruction/density baseline.
-- [ ] Frozen post-weld-image embedding + nearest-neighbor/anomaly baseline.
-- [ ] Common prediction schema for every modality.
-- [ ] Calibration strictly on train/validation, never test.
+- [ ] Sensor-only statistical/temporal learned baseline.
+- [ ] Maintained frozen video embedding + anomaly baseline.
+- [ ] Maintained frozen post-weld-image embedding + anomaly baseline.
+- [ ] Calibrate each model strictly on train/validation, never test.
+
+Architecture/model-family choices should be driven by real-data measurements and explicit research intent.
 
 ---
 
 ## P2-C — multimodal fusion
 
-- [ ] Standardize unimodal scores using Good training data only.
-- [ ] Reproduce simple fixed late fusion first.
-- [ ] Tune convex fusion weights on validation only.
-- [ ] Add reliability-aware/missing-modality fusion.
+- [x] Standardize selected unimodal scores using Good training data only.
+- [x] Implement fixed weighted late fusion.
+- [x] Renormalize remaining effective weights when modalities are missing.
+- [x] Add optional reliability-aware fusion.
+- [x] Tune convex weights on an explicit validation frame only.
+- [x] Add unimodal-versus-fusion ablation reporting from one immutable prediction frame.
 - [ ] Add learned fusion only after unimodal baselines are independently validated.
-- [ ] Report unimodal and fused results side by side for both official and session-disjoint split policies.
+- [ ] Report real-model fused results under official and session-disjoint policies once real unimodal predictions exist.
 
 ---
 
 ## P3 — online/edge simulation
 
-- [ ] Add a dataset replay service without coupling it to the indexer.
-- [ ] Add RTSP-compatible video replay and MQTT-compatible sensor/audio metadata transport where useful.
-- [ ] Define a stable online anomaly event schema and operator-feedback schema.
-- [ ] Add end-to-end latency/throughput/failure-injection tests.
-- [ ] Add ONNX/OpenVINO export adapters only after research correctness is stable.
+### Infrastructure-safe core
+
+- [ ] Add a transport-agnostic dataset replay plan/service without coupling it to the indexer.
+- [ ] Define stable anomaly-event and operator-feedback schemas.
+
+### Acceptance/model-dependent work
+
+- [ ] Add concrete RTSP/MQTT adapters where deployment requires them.
+- [ ] Add end-to-end transport latency/failure-injection tests after the transport contract exists.
+- [ ] Add ONNX/OpenVINO export adapters only after model correctness is stable.
 - [ ] Keep any commercial-use work blocked until dataset/model licensing is resolved in writing.
 
 ---
 
-## Next recommended implementation order
+## Next implementation batches
 
-1. Build the cancellable background task layer shared by preview, feature, and alignment work.
-2. Add QML synchronized timeline playback using schema-v2 alignment offsets and active intervals.
-3. Add QML compare/annotation/histogram workflows on top of the read-only dataset core and separate overlay state.
-4. Add a larger deterministic benchmark fixture and begin collecting stable real-machine benchmark baselines.
-5. Add stronger unimodal audio/sensor/video/image baselines after the analysis UI and timing contract are stable.
-6. Move to calibrated fusion and online replay only after unimodal results are reproducible under both split policies.
+1. Add the separate annotation/issue-disposition overlay database, deterministic Good-vs-defect matching service, analytics/pivot service, and transport-agnostic replay/event core. These do not require visual acceptance and must never mutate the raw index.
+2. Add API endpoints/tests for those service layers.
+3. Stop before choosing visual QML workflow details or model architectures; those are explicit acceptance/research decisions.
+4. Run the real 40 GB benchmark/alignment reports and use the evidence to decide any further optimization thresholds or algorithm refinements.
