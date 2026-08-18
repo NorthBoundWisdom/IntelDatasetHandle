@@ -123,6 +123,112 @@ def _bootstrap_group_auc(
     }
 
 
+def _fixed_threshold_metrics(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    *,
+    threshold: float,
+) -> dict[str, Any]:
+    mask = np.isfinite(scores)
+    labels = labels[mask].astype(int)
+    scores = scores[mask].astype(float)
+    predicted = scores >= threshold
+
+    positives = labels == 1
+    negatives = labels == 0
+    tp = int(np.sum(predicted & positives))
+    fn = int(np.sum(~predicted & positives))
+    fp = int(np.sum(predicted & negatives))
+    tn = int(np.sum(~predicted & negatives))
+    positive_count = int(np.sum(positives))
+    negative_count = int(np.sum(negatives))
+
+    return {
+        "samples": len(labels),
+        "positive_samples": positive_count,
+        "negative_samples": negative_count,
+        "tp": tp,
+        "fn": fn,
+        "fp": fp,
+        "tn": tn,
+        "tpr": float(tp / positive_count) if positive_count else None,
+        "fnr": float(fn / positive_count) if positive_count else None,
+        "fpr": float(fp / negative_count) if negative_count else None,
+        "tnr": float(tn / negative_count) if negative_count else None,
+        "predicted_anomaly_rate": float(np.mean(predicted)) if len(labels) else None,
+        "mean_score": float(np.mean(scores)) if len(scores) else None,
+    }
+
+
+def _range_of_defined(rows: list[dict[str, Any]], key: str) -> float | None:
+    values = [float(row[key]) for row in rows if row.get(key) is not None]
+    if len(values) < 2:
+        return None
+    return float(max(values) - min(values))
+
+
+def _threshold_stability(
+    frame: pd.DataFrame,
+    *,
+    score_col: str,
+    label_col: str,
+    threshold: float | None,
+    group_cols: tuple[str, ...],
+) -> dict[str, Any]:
+    """Measure group behavior at a threshold calibrated outside this evaluator.
+
+    The evaluator deliberately does not derive a classification threshold from the
+    frame it is evaluating. Callers should tune/calibrate on train/validation, then
+    pass the frozen threshold when evaluating validation/test or shift slices.
+    """
+
+    if threshold is None:
+        return {
+            "threshold": None,
+            "policy": "not_evaluated_without_external_threshold",
+            "overall": None,
+            "by_dimension": {},
+        }
+    if not np.isfinite(threshold):
+        raise ValueError("threshold must be finite when provided")
+
+    overall = _fixed_threshold_metrics(
+        frame[label_col].to_numpy(dtype=int),
+        frame[score_col].to_numpy(dtype=float),
+        threshold=float(threshold),
+    )
+    by_dimension: dict[str, Any] = {}
+    for column in group_cols:
+        if column not in frame.columns:
+            continue
+        groups: dict[str, Any] = {}
+        rows_for_range: list[dict[str, Any]] = []
+        for value, subset in frame.groupby(column, dropna=False):
+            key = "Unknown" if pd.isna(value) else str(value)
+            metrics = _fixed_threshold_metrics(
+                subset[label_col].to_numpy(dtype=int),
+                subset[score_col].to_numpy(dtype=float),
+                threshold=float(threshold),
+            )
+            groups[key] = metrics
+            rows_for_range.append(metrics)
+        by_dimension[column] = {
+            "groups": groups,
+            "fpr_range": _range_of_defined(rows_for_range, "fpr"),
+            "fnr_range": _range_of_defined(rows_for_range, "fnr"),
+            "predicted_anomaly_rate_range": _range_of_defined(
+                rows_for_range, "predicted_anomaly_rate"
+            ),
+        }
+
+    return {
+        "threshold": float(threshold),
+        "policy": "externally_calibrated_fixed_threshold",
+        "overall": overall,
+        "by_dimension": by_dimension,
+    }
+
+
 def evaluate_anomaly_predictions(
     frame: pd.DataFrame,
     *,
@@ -133,8 +239,21 @@ def evaluate_anomaly_predictions(
     fpr_targets: tuple[float, ...] = (0.001, 0.01, 0.05),
     bootstrap_iterations: int = 500,
     bootstrap_seed: int = 0,
+    threshold: float | None = None,
+    threshold_group_cols: tuple[str, ...] = (
+        "session_id",
+        "weld_type",
+        "steel_type",
+        "thickness_mm",
+    ),
 ) -> dict[str, Any]:
-    """Evaluate anomaly scores where larger values mean more anomalous/defective."""
+    """Evaluate anomaly scores where larger values mean more anomalous/defective.
+
+    `threshold`, when supplied, must be calibrated outside the evaluation frame
+    (normally on training/validation data). It is used only to measure operating-
+    point stability across acquisition/process groups; no test-set threshold tuning
+    occurs here.
+    """
 
     required = {score_col, label_col}
     missing = required - set(frame.columns)
@@ -171,12 +290,20 @@ def evaluate_anomaly_predictions(
         iterations=bootstrap_iterations,
         seed=bootstrap_seed,
     )
+    threshold_stability = _threshold_stability(
+        clean,
+        score_col=score_col,
+        label_col=label_col,
+        threshold=threshold,
+        group_cols=threshold_group_cols,
+    )
 
     return {
-        "metric_schema_version": 1,
+        "metric_schema_version": 2,
         "score_semantics": "higher_is_more_anomalous",
         "overall": overall.to_dict(),
         "by_category": by_category,
         "session_grouped_roc_auc_95ci": bootstrap,
+        "threshold_stability": threshold_stability,
         "fpr_targets": list(fpr_targets),
     }
