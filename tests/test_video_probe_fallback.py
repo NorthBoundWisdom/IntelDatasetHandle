@@ -16,9 +16,7 @@ class _ClosedCapture:
         pass
 
 
-def test_ffprobe_fallback_recovers_when_opencv_cannot_open(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_ffprobe_fallback_recovers_when_opencv_cannot_open(tmp_path: Path, monkeypatch) -> None:
     video = tmp_path / "fallback.avi"
     video.write_bytes(b"placeholder")
     monkeypatch.setattr(probe_module.cv2, "VideoCapture", lambda _path: _ClosedCapture())
