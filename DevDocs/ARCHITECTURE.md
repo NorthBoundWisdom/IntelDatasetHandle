@@ -31,8 +31,8 @@ Atomic SQLite index
         │
         ├── DatasetRepository
         │      ├── CLI
-        │      ├── FastAPI
-        │      ├── QML controller/model
+        │      ├── loopback FastAPI
+        │      │      └── native Qt QML client
         │      ├── preview generator
         │      └── feature extractor
         ▼
@@ -110,7 +110,7 @@ See `DATA_CONTRACT.md` for field semantics.
 
 `DatasetRepository` owns all read queries. Adapters must not issue ad hoc filesystem scans:
 
-- QML requests a filtered page from the repository.
+- Native QML requests filtered pages from the loopback FastAPI adapter.
 - FastAPI resolves only assets present in the index.
 - Preview generation receives full sample details from the repository.
 - Feature extraction iterates indexed sample IDs.
@@ -143,7 +143,10 @@ This is enough to verify the data contract and construct a tabular anomaly basel
 
 ## 10. Optional adapters
 
-Core package imports do not require PySide6, FastAPI, scikit-learn, PyTorch, or Hugging Face Hub. Optional imports are restricted to their adapter modules and commands.
+Core package imports do not require FastAPI, scikit-learn, PyTorch, or Hugging
+Face Hub. The desktop UI uses the developer's installed Qt `qml` executable and
+does not embed Python Qt bindings. Optional Python imports remain restricted to
+their adapter modules and commands.
 
 This keeps indexing usable in headless environments and reduces installation risk.
 
@@ -152,6 +155,7 @@ This keeps indexing usable in headless environments and reduces installation ris
 - Dataset probing uses a `ThreadPoolExecutor`; codecs and filesystem reads are I/O-heavy.
 - Feature extraction uses a separate bounded thread pool.
 - SQLite writes remain on the builder thread.
-- QML preview/index operations execute through `QThreadPool` to avoid blocking the UI.
+- QML uses asynchronous loopback HTTP requests; API sync handlers execute in
+  FastAPI's worker pool while the native UI event loop remains responsive.
 
 Future CPU/GPU-heavy learned feature extraction should use process workers or explicit device queues rather than extending the current thread pool indiscriminately.

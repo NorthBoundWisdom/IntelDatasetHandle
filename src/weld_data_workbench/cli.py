@@ -342,13 +342,23 @@ def serve_command(
 
 
 @app.command("gui")
-def gui_command(workspace: WorkspaceOption) -> None:
-    """Launch the PySide6/QML dataset browser."""
+def gui_command(
+    workspace: WorkspaceOption,
+    smoke_ms: int | None = typer.Option(
+        None,
+        min=1,
+        help="Exit the native QML runtime after this many milliseconds.",
+        hidden=True,
+    ),
+) -> None:
+    """Launch the native Qt QML browser with a loopback API backend."""
+    from .gui.app import run_gui
+
     try:
-        from .gui.app import run_gui
-    except ImportError as exc:
-        raise typer.BadParameter("Install the GUI extra: pip install -e '.[gui]'") from exc
-    raise typer.Exit(run_gui(workspace))
+        code = run_gui(workspace, smoke_ms=smoke_ms)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    raise typer.Exit(code)
 
 
 @app.command("synthetic")

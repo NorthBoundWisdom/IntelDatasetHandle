@@ -10,12 +10,12 @@ test:
 	pytest -q
 
 lint:
-	ruff check src tests scripts
-	python -m compileall -q src scripts tests
+	ruff check src tests scripts configs
+	python -m compileall -q src scripts tests configs
 
 format:
-	ruff format src tests scripts
-	ruff check --fix src tests scripts
+	ruff format src tests scripts configs
+	ruff check --fix src tests scripts configs
 
 synthetic-smoke:
 	rm -rf _demo

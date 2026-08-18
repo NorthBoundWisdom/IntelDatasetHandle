@@ -7,15 +7,15 @@ Date: 2026-08-18
 The repository covers archive handling, dataset discovery, manifest parsing,
 media probing, SQLite indexing, validation, preview generation, feature
 extraction, a lightweight anomaly-detection baseline, a FastAPI service, a
-PySide6/QML browser, synthetic fixtures, tests, and developer documentation.
+native Qt QML browser, synthetic fixtures, tests, and developer documentation.
 
 ## Automated checks executed
 
 ### Lint and Python compilation
 
 ```text
-.venv/bin/ruff check src tests scripts
-.venv/bin/python -m compileall -q src scripts tests
+.venv/bin/ruff check src tests scripts configs
+.venv/bin/python -m compileall -q src scripts tests configs
 Result: both passed
 ```
 
@@ -23,7 +23,7 @@ Result: both passed
 
 ```text
 .venv/bin/python -m pytest -q
-Result: 13 passed, 1 dependency deprecation warning (2.11s final run)
+Result: 18 passed, 1 dependency deprecation warning (2.27s final run)
 ```
 
 The warning originates in FastAPI/Starlette's test-client compatibility layer;
@@ -43,11 +43,13 @@ Covered behavior includes:
 ### Packaging verification
 
 ```text
-.venv/bin/python -m pip wheel . --no-deps
+python3 configs/workbench_workflow.py build
 Result: passed
 ```
 
-The generated wheel contained the Python modules and QML resources, including `Main.qml` and the component directory.
+The FreeCM Build action first passed Qt 6.11.1 `qmllint`, then produced a wheel
+containing `Main.qml` and its components. It also verified that removed PySide
+controller/model modules were absent from the clean build.
 
 ### End-to-end synthetic smoke run
 
@@ -83,9 +85,14 @@ warnings. Validation also reports that 216 session IDs cross official splits.
 These are source-data/split properties, not scanner failures. Full counts and
 media metadata are recorded in `DevDocs/DATASET_NOTES.md`.
 
+The FreeCM Config action reused this real workspace and refreshed all 4,040
+samples. The native QML smoke launched against a dynamically allocated loopback
+port, received HTTP 200 from health, stats, and the 1,000-sample page, exited on
+schedule, and shut down the API child cleanly.
+
 ## Known verification limits
 
-- The FastAPI adapter passed its integration test, but a long-running server was not launched against the real index.
-- PySide6 was not installed, so the optional QML desktop runtime was not launched.
+- The installed Qt runtime lacks Qt Multimedia, so original audio/video opens
+  externally; cached visual previews remain available inside QML.
 - Exact sensor units and synchronization-marker semantics are not encoded unambiguously in the CSV headers and still require upstream confirmation.
 - The included ML baseline is an engineering smoke baseline, not a reproduction of Intel's paper results.

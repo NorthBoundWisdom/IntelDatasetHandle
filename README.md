@@ -22,7 +22,7 @@ The code intentionally separates four concerns:
 - Cached video contact sheets, audio waveform/spectrogram images, sensor plots, and image thumbnails.
 - CLI and Python API.
 - FastAPI read-only service.
-- PySide6/QML dataset browser.
+- Native Qt QML dataset browser backed by the loopback-only FastAPI service.
 - Modality-level handcrafted feature extraction.
 - Isolation Forest baseline and late-fusion utility.
 - Synthetic mini-dataset generator for development before the 39.9 GB archive finishes downloading.
@@ -37,6 +37,29 @@ source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -e ".[all,dev]"
 ```
+
+The desktop browser uses an installed Qt `qml` runtime, not PySide. On macOS it
+is discovered from `PATH` or `~/Qt/*/macos/bin/qml`; set `WELD_QML_RUNTIME` to
+an explicit executable when Qt is installed elsewhere.
+
+## FreeCM buttons
+
+FreeCM discovers [the repository command manifest](configs/freecm.commands.jsonc)
+and exposes these project buttons:
+
+- **Config** creates/reuses `.venv`, installs dependencies, locates or safely
+  extracts the dataset, refreshes the real light-probe index, and writes the
+  ignored `build/freecm/configured.json` readiness receipt.
+- **Build** runs the installed `qmllint`, builds a wheel, and verifies that the
+  native QML resources are packaged without the removed PySide bridge.
+- **Run** starts a loopback API on an available port and launches the installed
+  native `qml` executable; closing QML also stops the API process.
+- **Test** runs Ruff, formatting, compilation, and the complete pytest suite.
+
+Machine-specific overrides are available through `WELD_QML_RUNTIME`,
+`WELD_DATASET_HOME`, `WELD_DATASET_ROOT`, `WELD_DATASET_ARCHIVE`,
+`WELD_EXTRACTED_ROOT`, `WELD_WORKSPACE`, and `WELD_SCAN_WORKERS`. No absolute
+host path is committed.
 
 Generate a small synthetic dataset and exercise the complete local workflow:
 
@@ -125,7 +148,7 @@ weldtool export-index   Export indexed metadata to JSONL/CSV/Parquet
 weldtool features       Extract lightweight modality features
 weldtool baseline       Train/evaluate a tabular anomaly baseline
 weldtool serve          Start the read-only FastAPI service
-weldtool gui            Start the PySide6/QML browser
+weldtool gui            Start the native Qt QML browser and loopback API
 weldtool synthetic      Generate a development dataset
 weldtool archive-list   Inspect a tar archive
 weldtool extract        Safely extract a tar archive

@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "commands": {
+    "config": [
+      {
+        "id": "local-qml-workbench",
+        "label": "Local QML Workbench",
+        "description": "Create the Python environment, locate or extract the Intel dataset, and refresh its light-probe index",
+        "command": "python3",
+        "args": [
+          "configs/workbench_workflow.py",
+          "config"
+        ],
+        "platforms": [
+          "darwin"
+        ],
+        "default": true,
+        "defaults": {
+          "build": "python-wheel",
+          "run": "qml-workbench",
+          "test": "precommit"
+        },
+        "readiness": {
+          "inputs": [
+            "pyproject.toml",
+            "config/default.yaml",
+            "configs/freecm.commands.jsonc",
+            "configs/workbench_workflow.py"
+          ],
+          "outputs": [
+            "build/freecm/configured.json"
+          ]
+        }
+      }
+    ],
+    "build": [
+      {
+        "id": "python-wheel",
+        "label": "Python Wheel",
+        "description": "Build the WeldDataWorkbench wheel and verify its QML resources",
+        "command": "python3",
+        "args": [
+          "configs/workbench_workflow.py",
+          "build"
+        ],
+        "configurations": [
+          "local-qml-workbench"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "id": "qml-workbench",
+        "label": "QML Workbench",
+        "description": "Run the installed native Qt QML runtime against the configured real dataset workspace",
+        "command": "python3",
+        "args": [
+          "configs/workbench_workflow.py",
+          "run"
+        ],
+        "configurations": [
+          "local-qml-workbench"
+        ]
+      }
+    ],
+    "test": [
+      {
+        "id": "precommit",
+        "label": "Precommit",
+        "description": "Run formatting, lint, compilation, and the complete Python test suite",
+        "command": "python3",
+        "args": [
+          "configs/workbench_workflow.py",
+          "test"
+        ],
+        "configurations": [
+          "local-qml-workbench"
+        ]
+      }
+    ],
+    "package": []
+  }
+}

@@ -1,51 +1,66 @@
 # QML frontend
 
-## Current scope
+## Runtime model
 
-The QML application is an engineering browser over the local SQLite index. It is not a labeling system and it does not own dataset discovery.
+The desktop browser runs with the developer's installed Qt `qml` executable.
+It does not import or install PySide. A short-lived Python launcher starts the
+read-only FastAPI adapter on `127.0.0.1` using an available port, waits for
+`/api/health`, then passes the API base URL to QML through
+`Qt.application.arguments`. Closing QML terminates the API child process.
 
-Current functions:
+FreeCM Config discovers `qml` from `PATH` or `~/Qt/*/macos/bin/qml`. An explicit
+`WELD_QML_RUNTIME` overrides discovery without putting an absolute path in Git.
 
-- Open an initialized workspace.
-- Rebuild the index in a worker thread.
+## Current functions
+
+- Load statistics and up to 1,000 filtered sample summaries from the real
+  SQLite-backed API.
 - Filter by query, category, split, and health.
-- Inspect process metadata, assets, and issues.
-- Play the primary indexed video through Qt Multimedia.
-- Generate and display cached video/audio/sensor/image previews.
-- Reveal files and copy paths.
+- Inspect process metadata, indexed assets, and structured issues.
+- Generate and display cached video contact sheets, image thumbnails, audio
+  plots, spectrograms, and sensor plots.
+- Open original video, audio, sensor, image, and generated preview URLs with the
+  operating system.
 
-## Python/QML boundary
+The QML layer never opens SQLite, scans raw directories, or writes into the raw
+dataset. All filesystem validation stays in `DatasetRepository` and the API.
 
-`AppController` exposes:
+## FreeCM lifecycle
 
-- State properties: workspace, busy/status, stats, selected sample, preview bundle, categories, splits, matching count.
-- Slots: open workspace, set filters, refresh, select sample, generate previews, rebuild index, open path, copy text.
+`configs/freecm.commands.jsonc` declares one `local-qml-workbench` Config:
 
-`SampleListModel` is a `QAbstractListModel` with stable roles. It carries only list-summary fields. Full sample detail is loaded on selection.
+1. **Config** prepares `.venv`, locates/extracts data, scans the dataset, and
+   records a local readiness receipt.
+2. **Build** runs the installed `qmllint`, builds the wheel, and checks that
+   `Main.qml` is packaged without stale PySide controller/model files.
+3. **Run** starts the loopback API and terminal-owned QML process.
+4. **Test** runs the repository's precommit checks.
 
-The QML layer must not open SQLite or scan directories directly.
+Config is explicit; Build, Run, and Test fail with a clear message when its
+receipt, workspace configuration, index, or QML runtime is missing.
 
 ## Performance model
 
-- At most 5,000 filtered rows are loaded into the current list model. This is sufficient for the upstream dataset scale; pagination can be added later.
-- Full sample detail is one repository query.
-- Expensive preview generation runs via `QThreadPool`.
-- Original video playback remains direct file playback.
-- Audio and sensor visualization currently use cached PNG derivatives, avoiding a QML charting dependency.
+- QML uses asynchronous `XMLHttpRequest`; the UI does not block on metadata
+  requests.
+- The list endpoint is bounded to 1,000 records per request.
+- Full sample detail is fetched only after selection.
+- Preview generation is bounded to one sample and cached in the external
+  workspace.
+- Original media remains lazy and is opened only on explicit user action.
 
 ## Known limitations
 
-- Preview task cancellation is not implemented.
-- The video playback cursor is not synchronized with waveform/sensor plots.
-- AVI codec support depends on Qt Multimedia's platform backend.
+- The installed Qt 6.11.1 runtime does not include Qt Multimedia, so original
+  video/audio is opened externally instead of decoded inside the QML window.
+- The current QML list has a 1,000-item page limit and no next/previous page UI.
+- Preview requests are not cancellable once submitted.
 - There is no persistent user annotation overlay.
-- Rebuild progress is coarse in the QML path.
-- QML code is included as a strong starter but has not been compiled in this delivery environment because PySide6 is optional.
 
 ## Recommended next UI steps
 
-1. Add a separate `annotations.sqlite3` so human notes never mutate the discovered index.
-2. Add a timeline model for synchronized video/audio/sensor selection.
-3. Add matched-sample comparison using category and process-parameter filters.
-4. Add category/split/process pivot charts.
-5. Package with `pyside6-deploy` after macOS and Windows codec testing.
+1. Add offset pagination and retained selection across pages.
+2. Add a separate `annotations.sqlite3` so human notes never mutate the index.
+3. Add matched-sample comparison using process-parameter filters.
+4. Add synchronized playback only after Qt Multimedia is installed and codec
+   behavior is validated on target machines.
