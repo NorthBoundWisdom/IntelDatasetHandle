@@ -32,13 +32,6 @@ def sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _distribution(connection, sql: str) -> dict[str, int]:
-    return {
-        str(row[0] if row[0] is not None else "Unknown"): int(row[1])
-        for row in connection.execute(sql).fetchall()
-    }
-
-
 def _metadata_distribution(connection, *, kind: str, field: str) -> dict[str, int]:
     result: dict[str, int] = {}
     rows = connection.execute(
@@ -53,6 +46,24 @@ def _metadata_distribution(connection, *, kind: str, field: str) -> dict[str, in
         if raw is None:
             continue
         key = str(raw)
+        result[key] = result.get(key, 0) + 1
+    return dict(sorted(result.items()))
+
+
+def _video_resolution_distribution(connection) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for row in connection.execute(
+        "SELECT metadata_json FROM assets WHERE kind='video' ORDER BY asset_id"
+    ).fetchall():
+        try:
+            metadata = json.loads(row[0]) if row[0] else {}
+        except (TypeError, json.JSONDecodeError):
+            continue
+        width = metadata.get("width")
+        height = metadata.get("height")
+        if not width or not height:
+            continue
+        key = f"{int(width)}x{int(height)}"
         result[key] = result.get(key, 0) + 1
     return dict(sorted(result.items()))
 
@@ -118,6 +129,79 @@ def _sensor_schema_distribution(connection) -> dict[str, int]:
     return dict(sorted(result.items()))
 
 
+def _missing_modality_counts(connection) -> dict[str, int]:
+    row = connection.execute(
+        """
+        SELECT
+            SUM(CASE WHEN primary_video_relpath IS NULL THEN 1 ELSE 0 END),
+            SUM(CASE WHEN primary_audio_relpath IS NULL THEN 1 ELSE 0 END),
+            SUM(CASE WHEN primary_sensor_relpath IS NULL THEN 1 ELSE 0 END),
+            SUM(CASE WHEN image_count = 0 THEN 1 ELSE 0 END)
+        FROM samples
+        """
+    ).fetchone()
+    return {
+        "video": int(row[0] or 0),
+        "audio": int(row[1] or 0),
+        "sensor": int(row[2] or 0),
+        "image": int(row[3] or 0),
+    }
+
+
+def _live_asset_integrity(config: AppConfig, connection) -> dict[str, Any]:
+    """Stat every indexed asset without decoding media or hashing large files."""
+
+    checked = 0
+    missing = 0
+    stat_mismatch = 0
+    path_errors = 0
+    io_errors = 0
+    examples: dict[str, list[str]] = {
+        "missing": [],
+        "stat_mismatch": [],
+        "path_error": [],
+        "io_error": [],
+    }
+    rows = connection.execute(
+        "SELECT relpath, size_bytes, mtime_ns FROM assets ORDER BY relpath"
+    ).fetchall()
+    for relpath, indexed_size, indexed_mtime in rows:
+        checked += 1
+        relpath = str(relpath)
+        try:
+            path = safe_join(config.dataset_root, relpath)
+        except ValueError:
+            path_errors += 1
+            if len(examples["path_error"]) < 10:
+                examples["path_error"].append(relpath)
+            continue
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            missing += 1
+            if len(examples["missing"]) < 10:
+                examples["missing"].append(relpath)
+            continue
+        except OSError:
+            io_errors += 1
+            if len(examples["io_error"]) < 10:
+                examples["io_error"].append(relpath)
+            continue
+        if int(stat.st_size) != int(indexed_size) or int(stat.st_mtime_ns) != int(indexed_mtime):
+            stat_mismatch += 1
+            if len(examples["stat_mismatch"]) < 10:
+                examples["stat_mismatch"].append(relpath)
+
+    return {
+        "checked": checked,
+        "missing": missing,
+        "stat_mismatch": stat_mismatch,
+        "path_errors": path_errors,
+        "io_errors": io_errors,
+        "examples": examples,
+    }
+
+
 def build_snapshot_payload(
     config: AppConfig, *, archive_path: Path | None = None
 ) -> dict[str, Any]:
@@ -168,6 +252,7 @@ def build_snapshot_payload(
             },
             "category_split": _category_split_distribution(connection),
             "assets_by_kind": dict(sorted(stats["assets_by_kind"].items())),
+            "missing_modalities": _missing_modality_counts(connection),
             "health": dict(sorted(stats["by_health"].items())),
             "issues_by_severity": dict(sorted(stats["issues_by_severity"].items())),
             "audio_sample_rates_hz": _metadata_distribution(
@@ -176,7 +261,9 @@ def build_snapshot_payload(
             "audio_channels": _metadata_distribution(connection, kind="audio", field="channels"),
             "video_fps": _metadata_distribution(connection, kind="video", field="fps"),
             "video_codecs": _metadata_distribution(connection, kind="video", field="fourcc"),
+            "video_resolutions": _video_resolution_distribution(connection),
             "sensor_schemas": _sensor_schema_distribution(connection),
+            "live_asset_integrity": _live_asset_integrity(config, connection),
             "canonical_index_sha256": _canonical_index_digest(config.index_path),
         }
     return payload
