@@ -12,6 +12,14 @@ import soundfile as sf
 
 ALIGNMENT_SCHEMA_VERSION = 1
 
+_KNOWN_SENSOR_DATETIME_FORMATS = (
+    "%m-%d-%y %H:%M:%S.%f",
+    "%Y-%m-%d %H:%M:%S.%f",
+    "%Y-%m-%d %H:%M:%S",
+    "%m/%d/%Y %H:%M:%S.%f",
+    "%m/%d/%Y %H:%M:%S",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class OnsetEstimate:
@@ -203,6 +211,20 @@ def estimate_video_onset(
         capture.release()
 
 
+def _parse_sensor_datetime(values: pd.Series) -> tuple[pd.Series, str]:
+    """Parse known sensor timestamp layouts without pandas format-inference warnings."""
+
+    for date_format in _KNOWN_SENSOR_DATETIME_FORMATS:
+        timestamps = pd.to_datetime(values, format=date_format, errors="coerce")
+        if int(timestamps.notna().sum()) >= 2:
+            return timestamps, date_format
+
+    # pandas>=2 supports explicit mixed parsing. This remains a last-resort
+    # compatibility path and avoids the implicit dateutil format-inference warning.
+    timestamps = pd.to_datetime(values, format="mixed", errors="coerce")
+    return timestamps, "mixed"
+
+
 def sensor_time_axis(frame: pd.DataFrame) -> tuple[np.ndarray | None, str]:
     """Resolve an explicit sensor time axis without inventing a sample rate."""
 
@@ -225,12 +247,12 @@ def sensor_time_axis(frame: pd.DataFrame) -> tuple[np.ndarray | None, str]:
             + " "
             + frame[time_column].astype(str).str.strip()
         )
-        timestamps = pd.to_datetime(combined, errors="coerce")
+        timestamps, parsed_format = _parse_sensor_datetime(combined)
         valid = timestamps.notna()
         if int(valid.sum()) >= 2:
             first = timestamps[valid].iloc[0]
             seconds = (timestamps - first).dt.total_seconds().to_numpy(dtype=np.float64)
-            return seconds, f"datetime:{date_column}+{time_column}"
+            return seconds, f"datetime:{date_column}+{time_column}:{parsed_format}"
 
     # A bare clock-time column can still be normalized within one recording.
     if time_column is not None:
