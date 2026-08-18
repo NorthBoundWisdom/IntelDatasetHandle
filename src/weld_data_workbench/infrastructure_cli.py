@@ -84,6 +84,7 @@ def split_create(
     workspace: WorkspaceOption,
     output: Annotated[Path, typer.Option("--output", "-o")],
     mode: str = typer.Option("holdout", help="holdout or kfold"),
+    strategy: str = typer.Option("balanced", help="balanced or hash for holdout"),
     seed: int = typer.Option(0),
     train: float = typer.Option(0.7, min=0.0, max=1.0),
     validation: float = typer.Option(0.15, min=0.0, max=1.0),
@@ -96,6 +97,7 @@ def split_create(
         config,
         output,
         mode=mode,
+        strategy=strategy,
         seed=seed,
         train=train,
         validation=validation,
@@ -152,9 +154,7 @@ def alignment_command(
     if sample is None:
         raise typer.BadParameter(f"Unknown sample: {sample_id}")
     report = estimate_sample_alignment(sample)
-    destination = output or (
-        config.reports_dir / "alignment" / f"{safe_slug(sample_id)}.json"
-    )
+    destination = output or (config.reports_dir / "alignment" / f"{safe_slug(sample_id)}.json")
     write_alignment_report(report, destination)
     payload = report.to_dict()
     payload["output"] = str(destination.expanduser().resolve())
