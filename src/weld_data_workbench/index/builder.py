@@ -37,6 +37,7 @@ class BuildSummary:
     warning_count: int
     manifest_path: Path | None
     discovery_notes: list[str]
+    added_sample_count: int = 0
     reused_sample_count: int = 0
     probed_sample_count: int = 0
     failed_probe_count: int = 0
@@ -116,6 +117,7 @@ class IndexBuilder:
         reused = 0
         probed = 0
         failed_probes = 0
+        added = len(current_sample_ids - previous.previous_sample_ids)
         removed = len(previous.previous_sample_ids - current_sample_ids)
         worker_count = workers or self.config.scan.workers
         futures: dict[Future, str] = {}
@@ -185,6 +187,7 @@ class IndexBuilder:
                 connection,
                 "incremental_summary",
                 {
+                    "added_samples": added,
                     "reused_samples": reused,
                     "probed_samples": probed,
                     "failed_probes": failed_probes,
@@ -234,6 +237,7 @@ class IndexBuilder:
             warning_count=warning_count,
             manifest_path=manifest_path,
             discovery_notes=discovery.notes,
+            added_sample_count=added,
             reused_sample_count=reused,
             probed_sample_count=probed,
             failed_probe_count=failed_probes,
