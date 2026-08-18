@@ -217,9 +217,7 @@ def _probe_video_ffprobe(path: Path) -> tuple[dict[str, Any], bool]:
     stream = streams[0]
     format_payload = payload.get("format")
     format_metadata = format_payload if isinstance(format_payload, dict) else {}
-    fps = _ffprobe_rate(stream.get("avg_frame_rate")) or _ffprobe_rate(
-        stream.get("r_frame_rate")
-    )
+    fps = _ffprobe_rate(stream.get("avg_frame_rate")) or _ffprobe_rate(stream.get("r_frame_rate"))
     duration = _ffprobe_positive_float(stream.get("duration")) or _ffprobe_positive_float(
         format_metadata.get("duration")
     )
