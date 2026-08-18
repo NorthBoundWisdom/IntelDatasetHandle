@@ -198,7 +198,9 @@ def compare_split_policies(
 
     if label_col is None:
         if frame["is_good"].isna().any():
-            raise ValueError("Cannot derive anomaly labels because some indexed samples lack is_good")
+            raise ValueError(
+                "Cannot derive anomaly labels because some indexed samples lack is_good"
+            )
         frame["is_anomaly"] = 1 - frame["is_good"].astype(int)
         label_source = "index:is_good"
     else:
@@ -208,10 +210,14 @@ def compare_split_policies(
         frame["is_anomaly"] = labels
         label_source = f"predictions:{label_col}"
 
-    assignments = {str(key): str(value) for key, value in split_artifact["sample_assignments"].items()}
+    assignments = {
+        str(key): str(value) for key, value in split_artifact["sample_assignments"].items()
+    }
     frame["experimental_split"] = frame["sample_id"].map(assignments)
     if frame["experimental_split"].isna().any():
-        missing = frame.loc[frame["experimental_split"].isna(), "sample_id"].astype(str).tolist()[:20]
+        missing = (
+            frame.loc[frame["experimental_split"].isna(), "sample_id"].astype(str).tolist()[:20]
+        )
         raise ValueError(f"Split artifact has no assignment for prediction samples: {missing}")
 
     upstream = _evaluate_policy(
