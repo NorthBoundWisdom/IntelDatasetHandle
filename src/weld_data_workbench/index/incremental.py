@@ -205,11 +205,9 @@ class PreviousIndexReuse:
             self.config.scan.max_sensor_preview_rows
         ):
             return False
-        if int(old_contract.get("expected_post_weld_images", -1)) != int(
+        return int(old_contract.get("expected_post_weld_images", -1)) == int(
             self.config.validation.expected_post_weld_images
-        ):
-            return False
-        return True
+        )
 
     def close(self) -> None:
         if self.connection is not None:
