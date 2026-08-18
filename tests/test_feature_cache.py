@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -55,17 +56,27 @@ def test_feature_cache_invalidates_only_touched_modality(indexed_workspace, tmp_
     sample = extractor.repository.get_sample("good-train-000")
     assert sample is not None
     audio = next(asset for asset in sample["assets"] if asset["kind"] == "audio")
-    Path(audio["absolute_path"]).touch()
+    audio_path = Path(audio["absolute_path"])
+    original_stat = audio_path.stat()
+    try:
+        audio_path.touch()
 
-    after = extractor.extract(
-        tmp_path / "after.csv",
-        modalities=("audio", "sensor"),
-        workers=2,
-    )
-    assert after.jobs_requested == 28
-    assert after.jobs_executed == 1
-    assert after.jobs_reused == 27
-    assert after.jobs_failed == 0
+        after = extractor.extract(
+            tmp_path / "after.csv",
+            modalities=("audio", "sensor"),
+            workers=2,
+        )
+        assert after.jobs_requested == 28
+        assert after.jobs_executed == 1
+        assert after.jobs_reused == 27
+        assert after.jobs_failed == 0
+    finally:
+        # `synthetic_root` is session-scoped. Restore the original metadata so this
+        # cache test cannot influence snapshot/index tests that run later.
+        os.utime(
+            audio_path,
+            ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+        )
 
 
 def test_feature_job_store_recovers_interrupted_jobs(tmp_path: Path) -> None:
