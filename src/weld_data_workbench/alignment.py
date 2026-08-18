@@ -57,7 +57,7 @@ def _robust_onset(
     if len(values) < max(minimum_baseline_points + consecutive, 5):
         return None, 0.0, {"reason": "insufficient_points"}
 
-    baseline_count = max(minimum_baseline_points, int(round(len(values) * baseline_fraction)))
+    baseline_count = max(minimum_baseline_points, round(len(values) * baseline_fraction))
     baseline_count = min(baseline_count, max(1, len(values) - consecutive))
     baseline_values = values[:baseline_count]
     baseline = float(np.median(baseline_values))
@@ -109,7 +109,7 @@ def estimate_audio_onset(
         if data.size == 0 or sample_rate <= 0:
             raise ValueError("audio contains no readable samples")
         mono = np.mean(data, axis=1, dtype=np.float64)
-        frame_length = max(16, int(round(sample_rate * frame_ms / 1000.0)))
+        frame_length = max(16, round(sample_rate * frame_ms / 1000.0))
         frame_count = len(mono) // frame_length
         if frame_count < 5:
             raise ValueError("audio is too short for onset estimation")
@@ -154,7 +154,7 @@ def estimate_video_onset(
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
         if fps <= 0:
             raise ValueError("video has no usable FPS")
-        max_frames = max(5, int(round(max_seconds * fps)))
+        max_frames = max(5, round(max_seconds * fps))
         scores: list[float] = []
         frame_index = 0
         while frame_index < max_frames:
@@ -220,7 +220,11 @@ def sensor_time_axis(frame: pd.DataFrame) -> tuple[np.ndarray | None, str]:
     date_column = normalized.get("date")
     time_column = normalized.get("time")
     if date_column is not None and time_column is not None:
-        combined = frame[date_column].astype(str).str.strip() + " " + frame[time_column].astype(str).str.strip()
+        combined = (
+            frame[date_column].astype(str).str.strip()
+            + " "
+            + frame[time_column].astype(str).str.strip()
+        )
         timestamps = pd.to_datetime(combined, errors="coerce")
         valid = timestamps.notna()
         if int(valid.sum()) >= 2:
