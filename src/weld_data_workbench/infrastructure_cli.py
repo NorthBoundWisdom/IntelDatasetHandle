@@ -10,6 +10,7 @@ from rich.console import Console
 from .alignment import estimate_sample_alignment, write_alignment_report
 from .benchmark import run_repository_benchmark, write_benchmark_report
 from .config import load_config
+from .duplicates import scan_near_duplicates, write_near_duplicate_report
 from .index.repository import DatasetRepository
 from .io.paths import safe_slug
 from .provenance import create_snapshot, load_snapshot, verify_snapshot
@@ -76,6 +77,38 @@ def leakage_audit(
             json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+    console.print_json(data=payload)
+
+
+@app.command("near-duplicates")
+def near_duplicates_command(
+    workspace: WorkspaceOption,
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    kinds: str = typer.Option("image,video", help="Comma-separated: image,video"),
+    image_distance: int = typer.Option(4, min=0, max=64),
+    video_distance: int = typer.Option(12, min=0, max=192),
+    cross_split_only: bool = typer.Option(
+        True,
+        "--cross-split-only/--all-pairs",
+        help="Limit candidates to assets whose owning samples use different upstream splits.",
+    ),
+    max_pairs: int = typer.Option(10_000, min=1),
+) -> None:
+    """Find cached perceptual near-duplicate candidates for leakage triage."""
+    config = load_config(workspace)
+    selected = tuple(item.strip() for item in kinds.split(",") if item.strip())
+    report = scan_near_duplicates(
+        config,
+        kinds=selected,
+        image_distance=image_distance,
+        video_distance=video_distance,
+        cross_split_only=cross_split_only,
+        max_pairs=max_pairs,
+    )
+    destination = output or (config.reports_dir / "near-duplicates.json")
+    write_near_duplicate_report(report, destination)
+    payload = report.to_dict()
+    payload["output"] = str(destination.expanduser().resolve())
     console.print_json(data=payload)
 
 
