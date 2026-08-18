@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -338,7 +338,7 @@ def _indexed_media_rows(config: AppConfig, kinds: tuple[str, ...]) -> list[sqlit
         ORDER BY a.kind,a.ordinal,a.sample_id,a.relpath
     """
     with connect_database(config.index_path, read_only=True) as connection:
-        return connection.execute(sql, kinds).fetchall()
+        return cast(list[sqlite3.Row], connection.execute(sql, kinds).fetchall())
 
 
 def _load_signatures(
