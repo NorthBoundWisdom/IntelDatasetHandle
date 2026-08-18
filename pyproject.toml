@@ -97,6 +97,8 @@ where = ["src"]
 "weld_data_workbench.gui" = [
   "qml/*.qml",
   "qml/components/*.qml",
+  "qml/assets/*.png",
+  "qml/assets/*.icns",
 ]
 
 [tool.pytest.ini_options]

@@ -15,6 +15,7 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         text: root.text
+        color: "#f3f5f8"
         font.pixelSize: 11
     }
 }

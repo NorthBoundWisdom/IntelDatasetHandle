@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import os
@@ -27,7 +28,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 VENV_ROOT = REPO_ROOT / ".venv"
 FREECM_BUILD_ROOT = REPO_ROOT / "build" / "freecm"
 CONFIG_RECEIPT = FREECM_BUILD_ROOT / "configured.json"
+ENVIRONMENT_MARKER = FREECM_BUILD_ROOT / "environment.json"
 WHEEL_ROOT = FREECM_BUILD_ROOT / "wheel"
+NATIVE_LAUNCHER_SOURCE = (
+    REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "native" / "qml_launcher.cpp"
+)
+NATIVE_LAUNCHER = FREECM_BUILD_ROOT / "demo_qml_launcher"
+ICON_SOURCE = (
+    REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "qml" / "assets" / "demo_icon_source.png"
+)
+ICON_PNG = REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "qml" / "assets" / "demo_icon.png"
+ICON_ICNS = REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "qml" / "assets" / "Demo.icns"
 
 MANIFEST_SUFFIXES = {".csv", ".tsv", ".txt"}
 MANIFEST_SIGNATURE_COLUMNS = {"CATEGORY", "DIRECTORY", "SUBDIRS", "SPLIT"}
@@ -203,15 +214,76 @@ def _run_command(
     return result
 
 
+def _pyproject_sha256() -> str:
+    return hashlib.sha256((REPO_ROOT / "pyproject.toml").read_bytes()).hexdigest()
+
+
+def _environment_marker_is_current(python: Path) -> bool:
+    if not python.is_file() or not ENVIRONMENT_MARKER.is_file():
+        return False
+    try:
+        marker = json.loads(ENVIRONMENT_MARKER.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if marker.get("python") != str(python) or marker.get("pyproject_sha256") != _pyproject_sha256():
+        return False
+    probe = subprocess.run(
+        [python, "-c", "import build, fastapi, pandas, weld_data_workbench"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    return probe.returncode == 0
+
+
+def _write_environment_marker(python: Path) -> None:
+    ENVIRONMENT_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    temporary = ENVIRONMENT_MARKER.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(
+            {
+                "configured_at": datetime.now(UTC).isoformat(),
+                "python": str(python),
+                "pyproject_sha256": _pyproject_sha256(),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(ENVIRONMENT_MARKER)
+
+
 def _ensure_environment() -> Path:
     if sys.version_info < (3, 11):  # noqa: UP036 - bootstrap runs before package install
         raise WorkflowError("Config requires Python 3.11 or newer")
 
     python = _venv_python()
+    if _environment_marker_is_current(python):
+        print(f"Reusing configured environment: {python}")
+        return python
     if not python.is_file():
         _run_command([sys.executable, "-m", "venv", VENV_ROOT])
     _run_command([python, "-m", "pip", "install", "--upgrade", "pip", "setuptools>=68", "wheel"])
     _run_command([python, "-m", "pip", "install", "-e", ".[all,dev]"])
+    _write_environment_marker(python)
+    return python
+
+
+def _require_environment() -> Path:
+    python = _venv_python()
+    if not _environment_marker_is_current(python):
+        raise WorkflowError(
+            "Environment is not initialized; run `python3 configs/source_root_workflow.py --init`"
+        )
+    return python
+
+
+def initialize_environment() -> Path:
+    """Install/update the project environment; intended for FreeCM --init."""
+    python = _ensure_environment()
+    print(f"Environment ready: {python}")
     return python
 
 
@@ -309,7 +381,7 @@ def configure() -> None:
     multimedia_module = qt_multimedia_module(qml_runtime)
     if not multimedia_module.is_dir():
         raise WorkflowError(f"Qt Multimedia QML module is missing: {multimedia_module}")
-    python = _ensure_environment()
+    python = _require_environment()
 
     data_home = _path_from_env("WELD_DATASET_HOME", Path.home() / "Datasets" / "IntelWelding")
     extraction_root = _path_from_env("WELD_EXTRACTED_ROOT", data_home / "extracted")
@@ -406,8 +478,54 @@ def _clean_python_build_staging() -> None:
             shutil.rmtree(path)
 
 
+def build_native_launcher(qml_runtime: Path) -> Path:
+    if sys.platform != "darwin":
+        raise WorkflowError("The native Qt icon launcher currently requires macOS")
+    compiler_name = os.environ.get("CXX", "clang++")
+    compiler = shutil.which(compiler_name)
+    if compiler is None:
+        raise WorkflowError(f"C++ compiler not found: {compiler_name}")
+    qt_root = qml_runtime.expanduser().resolve().parent.parent
+    if not NATIVE_LAUNCHER_SOURCE.is_file():
+        raise WorkflowError(f"Native QML launcher source is missing: {NATIVE_LAUNCHER_SOURCE}")
+
+    NATIVE_LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
+    command: list[str | Path] = [
+        compiler,
+        "-std=c++17",
+        "-O2",
+        "-F",
+        qt_root / "lib",
+        "-I",
+        qt_root / "include",
+        "-I",
+        qt_root / "lib" / "QtCore.framework" / "Headers",
+        "-I",
+        qt_root / "lib" / "QtGui.framework" / "Headers",
+        "-I",
+        qt_root / "lib" / "QtQml.framework" / "Headers",
+        "-I",
+        qt_root / "lib" / "QtQuick.framework" / "Headers",
+        NATIVE_LAUNCHER_SOURCE,
+        "-framework",
+        "QtCore",
+        "-framework",
+        "QtGui",
+        "-framework",
+        "QtQml",
+        "-framework",
+        "QtQuick",
+        f"-Wl,-rpath,{qt_root / 'lib'}",
+        "-o",
+        NATIVE_LAUNCHER,
+    ]
+    _run_command(command)
+    return NATIVE_LAUNCHER
+
+
 def build_wheel() -> None:
     python, _workspace_root, qml_runtime = _require_configuration()
+    build_native_launcher(qml_runtime)
     qmllint = qml_runtime.with_name("qmllint")
     qml_root = REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "qml"
     if qmllint.is_file():
@@ -427,9 +545,14 @@ def build_wheel() -> None:
         if len(metadata_paths) != 1:
             raise WorkflowError(f"Built wheel has an invalid METADATA layout: {wheel}")
         metadata = archive.read(metadata_paths[0]).decode("utf-8")
-    required_resource = "weld_data_workbench/gui/qml/Main.qml"
-    if required_resource not in resources:
-        raise WorkflowError(f"Built wheel is missing {required_resource}: {wheel}")
+    required_resources = {
+        "weld_data_workbench/gui/qml/Main.qml",
+        "weld_data_workbench/gui/qml/assets/demo_icon.png",
+        "weld_data_workbench/gui/qml/assets/Demo.icns",
+    }
+    missing_resources = sorted(required_resources - resources)
+    if missing_resources:
+        raise WorkflowError(f"Built wheel is missing QML resources {missing_resources}: {wheel}")
     forbidden_resources = {
         "weld_data_workbench/gui/controller.py",
         "weld_data_workbench/gui/models.py",
@@ -452,6 +575,7 @@ def run_tests() -> None:
 
 def run_qml(*, check: bool) -> None:
     python, workspace_root, qml_runtime = _require_configuration()
+    launcher = build_native_launcher(qml_runtime)
     command: list[str | Path] = [
         python,
         "-m",
@@ -462,6 +586,7 @@ def run_qml(*, check: bool) -> None:
     ]
     environment = os.environ.copy()
     environment["WELD_QML_RUNTIME"] = str(qml_runtime)
+    environment["WELD_QML_LAUNCHER"] = str(launcher)
     if check:
         command.extend(["--smoke-ms", "750"])
         _run_command(command, env=environment)

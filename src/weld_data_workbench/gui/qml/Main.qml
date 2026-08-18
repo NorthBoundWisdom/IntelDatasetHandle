@@ -11,7 +11,29 @@ ApplicationWindow {
     minimumWidth: 1120
     minimumHeight: 700
     visible: true
-    title: "WeldDataWorkbench"
+    title: "Demo"
+
+    property color pageColor: "#202226"
+    property color panelColor: "#282b30"
+    property color textColor: "#f3f5f8"
+    property color mutedTextColor: "#b8c0cc"
+
+    palette {
+        window: pageColor
+        windowText: textColor
+        base: panelColor
+        alternateBase: "#33373e"
+        text: textColor
+        button: "#4b5058"
+        buttonText: textColor
+        brightText: "#ffffff"
+        highlight: "#1558d6"
+        highlightedText: "#ffffff"
+        placeholderText: mutedTextColor
+        mid: mutedTextColor
+    }
+
+    background: Rectangle { color: window.pageColor }
 
     property string apiBase: "http://127.0.0.1:8765"
     property int busyCount: 0
@@ -191,7 +213,7 @@ ApplicationWindow {
 
     Dialog {
         id: errorDialog
-        title: "WeldDataWorkbench"
+        title: "Demo"
         modal: true
         standardButtons: Dialog.Ok
         Label {
@@ -206,7 +228,14 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 12
-            Label { text: "WeldDataWorkbench"; font.pixelSize: 18; font.bold: true }
+            Image {
+                source: Qt.resolvedUrl("assets/demo_icon.png")
+                sourceSize: Qt.size(64, 64)
+                fillMode: Image.PreserveAspectFit
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+            }
+            Label { text: "Demo"; font.pixelSize: 18; font.bold: true }
             Label {
                 text: window.apiBase
                 color: window.palette.mid
@@ -237,10 +266,12 @@ ApplicationWindow {
             SplitView.minimumWidth: 220
             padding: 12
             ScrollView {
+                id: filterScroll
                 anchors.fill: parent
                 clip: true
+                contentWidth: availableWidth
                 ColumnLayout {
-                    width: parent.width
+                    width: filterScroll.availableWidth
                     spacing: 10
                     Label { text: "Dataset"; font.bold: true; font.pixelSize: 16 }
                     StatCard {
@@ -375,11 +406,13 @@ ApplicationWindow {
                 detail: "The native QML client reads metadata and previews from a loopback-only API."
             }
             ScrollView {
+                id: detailScroll
                 anchors.fill: parent
                 visible: Boolean(window.selected.sample_id)
                 clip: true
+                contentWidth: availableWidth
                 ColumnLayout {
-                    width: parent.width
+                    width: detailScroll.availableWidth
                     spacing: 14
                     Pane {
                         Layout.fillWidth: true

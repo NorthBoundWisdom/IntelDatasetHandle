@@ -15,6 +15,7 @@ for path in (REPO_ROOT, FREECM_ROOT):
 from freecm.source_root_workflow import SourceRootWorkflowScript  # noqa: E402
 
 from configs.source_roots import WORKFLOW  # noqa: E402
+from configs.workbench_workflow import initialize_environment  # noqa: E402
 
 APP_CONFIG_KEYS = (
     "WELD_QML_RUNTIME",
@@ -25,6 +26,13 @@ APP_CONFIG_KEYS = (
     "WELD_WORKSPACE",
     "WELD_SCAN_WORKERS",
 )
+
+
+class WorkbenchSourceRootWorkflowScript(SourceRootWorkflowScript):
+    def _cmd_init(self, *, quiet: bool = False) -> int:
+        self._print_status("environment", "preparing Python environment")
+        initialize_environment()
+        return super()._cmd_init(quiet=quiet)
 
 
 def update_workbench() -> int:
@@ -49,7 +57,7 @@ def update_workbench() -> int:
     return result.returncode
 
 
-SCRIPT = SourceRootWorkflowScript(
+SCRIPT = WorkbenchSourceRootWorkflowScript(
     WORKFLOW,
     repo_display_name="WeldDataWorkbench",
     update_callback=update_workbench,

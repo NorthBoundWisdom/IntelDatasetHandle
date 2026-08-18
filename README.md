@@ -47,21 +47,25 @@ PySide. User-specific Qt and dataset paths are stored in both
 FreeCM discovers [the repository command manifest](configs/freecm.commands.jsonc)
 and exposes these project buttons:
 
+- **Init** prepares/reuses `.venv`, installs dependencies only when the
+  `pyproject.toml` receipt is missing or stale, and initializes FreeCM state.
 - **Config** runs the standard `source_root_workflow.py --update`, applies the
   active lock's `AppConfigs`, refreshes the real light-probe index, and writes
-  the ignored `build/freecm/configured.json` readiness receipt.
-- **Build** runs the installed `qmllint`, builds a wheel, and verifies that the
-  native QML resources are packaged without the removed PySide bridge.
+  the ignored `build/freecm/configured.json` readiness receipt. It does not run
+  pip.
+- **Build** compiles the native Qt launcher (including `setWindowIcon()`), runs
+  `qmllint`, builds a wheel, and verifies that the native QML resources are
+  packaged without the removed PySide bridge.
 - **Run** starts a loopback API on an available port and launches the installed
   native `qml` executable with embedded Qt Multimedia audio/video playback;
   closing QML also stops the API process.
 - **Test** runs Ruff, formatting, compilation, and the complete pytest suite.
 
-Initialize the checked-in FreeCM submodule and locks with:
+Initialize the checked-in FreeCM submodule, environment, and locks with:
 
 ```bash
 git submodule update --init --recursive FreeCM
-python3 configs/source_root_workflow.py --init
+python3 configs/source_root_workflow.py --init  # environment install/reuse
 python3 configs/source_root_workflow.py --update
 ```
 

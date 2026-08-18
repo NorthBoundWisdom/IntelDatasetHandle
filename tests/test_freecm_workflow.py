@@ -100,3 +100,13 @@ def test_source_roots_locks_store_the_same_user_configuration() -> None:
     assert "source_roots.lock.jsonc" in ignore
     assert ".source_roots.lock.jsonc.lock" in ignore
     assert ".freecm.workspace.lock" in ignore
+
+
+def test_environment_installation_is_owned_by_init_not_update() -> None:
+    source_root_workflow = Path("configs/source_root_workflow.py").read_text(encoding="utf-8")
+    workbench_workflow = Path("configs/workbench_workflow.py").read_text(encoding="utf-8")
+
+    assert "def _cmd_init" in source_root_workflow
+    assert "initialize_environment()" in source_root_workflow
+    assert "def _require_environment" in workbench_workflow
+    assert "python3 configs/source_root_workflow.py --init" in workbench_workflow

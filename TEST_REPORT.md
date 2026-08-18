@@ -47,7 +47,9 @@ python3 configs/workbench_workflow.py build
 Result: passed
 ```
 
-The FreeCM Build action first passed Qt 6.11.2 `qmllint`, then produced a wheel
+The FreeCM Build action first compiled the native `demo_qml_launcher` with Qt
+6.11.2 and `QGuiApplication::setWindowIcon()`, then passed Qt 6.11.2 `qmllint`
+and produced a wheel
 containing `Main.qml` and its components. It also verified that removed PySide
 controller/model modules were absent from the clean build.
 

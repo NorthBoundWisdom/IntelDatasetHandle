@@ -63,6 +63,26 @@ def build_qml_command(
     return command
 
 
+def build_native_qml_command(
+    launcher: Path,
+    *,
+    api_base: str,
+    smoke_ms: int | None = None,
+) -> list[str]:
+    command = [str(launcher), f"--api-base={api_base}"]
+    if smoke_ms is not None:
+        command.append(f"--smoke-ms={smoke_ms}")
+    return command
+
+
+def discover_qml_launcher(explicit: Path | None = None) -> Path | None:
+    if explicit is not None:
+        candidate = explicit.expanduser().resolve()
+        return candidate if candidate.is_file() and os.access(candidate, os.X_OK) else None
+    candidate = Path.cwd() / "build" / "freecm" / "demo_qml_launcher"
+    return candidate.resolve() if candidate.is_file() and os.access(candidate, os.X_OK) else None
+
+
 def _available_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
@@ -113,6 +133,9 @@ def run_gui(
         )
 
     qml_file = Path(__file__).parent / "qml" / "Main.qml"
+    icon_file = qml_file.parent / "assets" / "Demo.icns"
+    explicit_launcher = os.environ.get("WELD_QML_LAUNCHER")
+    launcher = discover_qml_launcher(Path(explicit_launcher) if explicit_launcher else None)
     port = _available_port()
     api_base = f"http://127.0.0.1:{port}"
     server_command = [
@@ -130,8 +153,23 @@ def run_gui(
     server = subprocess.Popen(server_command)
     try:
         _wait_for_api(f"{api_base}/api/health", server)
-        command = build_qml_command(runtime, qml_file, api_base=api_base, smoke_ms=smoke_ms)
-        return subprocess.run(command, check=False).returncode
+        environment = os.environ.copy()
+        if launcher is not None:
+            environment.update(
+                {
+                    "WELD_DEMO_ICON": str(icon_file),
+                    "WELD_QML_FILE": str(qml_file),
+                    "WELD_QML_IMPORT_PATH": str(runtime.parent.parent / "qml"),
+                }
+            )
+            command = build_native_qml_command(
+                launcher,
+                api_base=api_base,
+                smoke_ms=smoke_ms,
+            )
+        else:
+            command = build_qml_command(runtime, qml_file, api_base=api_base, smoke_ms=smoke_ms)
+        return subprocess.run(command, check=False, env=environment).returncode
     finally:
         _stop_process(server)
 
