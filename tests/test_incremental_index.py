@@ -41,7 +41,8 @@ def test_incremental_index_reuses_unchanged_samples_and_reprobes_one_touch(
     assert called == []
 
     repo = DatasetRepository(config.index_path, config.dataset_root)
-    sample = repo.get_sample("good-train-000")
+    row = repo.list_samples(category="Good", split="train", limit=1)[0]
+    sample = repo.get_sample(str(row["sample_id"]))
     assert sample is not None
     audio = next(asset for asset in sample["assets"] if asset["kind"] == "audio")
     Path(audio["absolute_path"]).touch()
