@@ -209,9 +209,7 @@ class FeatureExtractor:
             jobs_reused += len(selected) - len(pending_modalities)
 
         worker_count = workers or self.config.scan.workers
-        futures: dict[
-            Future[dict[str, tuple[dict[str, object] | None, str | None]]], str
-        ] = {}
+        futures: dict[Future[dict[str, tuple[dict[str, object] | None, str | None]]], str] = {}
         completed_samples = 0
         jobs_executed = 0
 
