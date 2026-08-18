@@ -71,9 +71,7 @@ def _canonical_index_digest(index_path: Path) -> str:
             "weld_type,thickness_mm,steel_type,current_a,voltage_v,gas_bar,"
             "robot_speed_cpm,manifest_relpath,manifest_row,health_status,total_bytes,image_count"
         )
-        for row in connection.execute(
-            f"SELECT {sample_columns} FROM samples ORDER BY sample_id"
-        ):
+        for row in connection.execute(f"SELECT {sample_columns} FROM samples ORDER BY sample_id"):
             digest.update(_canonical_json(list(row)).encode("utf-8"))
             digest.update(b"\n")
 
@@ -120,7 +118,9 @@ def _sensor_schema_distribution(connection) -> dict[str, int]:
     return dict(sorted(result.items()))
 
 
-def build_snapshot_payload(config: AppConfig, *, archive_path: Path | None = None) -> dict[str, Any]:
+def build_snapshot_payload(
+    config: AppConfig, *, archive_path: Path | None = None
+) -> dict[str, Any]:
     repo = DatasetRepository(config.index_path, config.dataset_root)
     stats = repo.stats()
     meta = repo.meta()
