@@ -7,8 +7,15 @@ from weld_data_workbench.features.cache import FeatureJobStore
 from weld_data_workbench.features.pipeline import FeatureExtractor
 
 
+def _reset_feature_cache(config) -> None:
+    path = config.features_dir / "feature_jobs.sqlite3"
+    for suffix in ("", "-wal", "-shm"):
+        Path(str(path) + suffix).unlink(missing_ok=True)
+
+
 def test_feature_cache_reuses_unchanged_modalities(indexed_workspace, tmp_path: Path) -> None:
     config, _summary = indexed_workspace
+    _reset_feature_cache(config)
     extractor = FeatureExtractor(config)
 
     first = extractor.extract(
@@ -37,6 +44,7 @@ def test_feature_cache_reuses_unchanged_modalities(indexed_workspace, tmp_path: 
 
 def test_feature_cache_invalidates_only_touched_modality(indexed_workspace, tmp_path: Path) -> None:
     config, _summary = indexed_workspace
+    _reset_feature_cache(config)
     extractor = FeatureExtractor(config)
     extractor.extract(
         tmp_path / "before.csv",
