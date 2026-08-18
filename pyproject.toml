@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weld-data-workbench"
+version = "0.1.0"
+description = "Local indexing, validation, preview, feature extraction, and research baselines for multimodal robotic welding datasets."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "WeldDataWorkbench contributors" }
+]
+keywords = ["welding", "multimodal", "dataset", "robotics", "anomaly-detection"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pydantic>=2.7",
+  "typer>=0.12",
+  "rich>=13.7",
+  "PyYAML>=6.0",
+  "platformdirs>=4.2",
+  "filelock>=3.13",
+  "Pillow>=10.3",
+  "soundfile>=0.12",
+  "scipy>=1.12",
+  "opencv-python-headless>=4.9",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+api = [
+  "fastapi>=0.111",
+  "uvicorn[standard]>=0.30",
+]
+gui = [
+  "PySide6>=6.7",
+]
+parquet = [
+  "pyarrow>=16",
+]
+ml = [
+  "scikit-learn>=1.4",
+  "joblib>=1.4",
+]
+torch = [
+  "torch>=2.3",
+]
+download = [
+  "huggingface_hub>=0.23",
+]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=5",
+  "httpx>=0.27",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "types-PyYAML>=6.0",
+]
+all = [
+  "fastapi>=0.111",
+  "uvicorn[standard]>=0.30",
+  "PySide6>=6.7",
+  "pyarrow>=16",
+  "scikit-learn>=1.4",
+  "joblib>=1.4",
+  "huggingface_hub>=0.23",
+]
+
+[project.scripts]
+weldtool = "weld_data_workbench.cli:app"
+weldworkbench-gui = "weld_data_workbench.gui.app:main"
+
+[project.urls]
+Homepage = "https://huggingface.co/datasets/IntelLabs/Intel_Robotic_Welding_Multimodal_Dataset"
+Paper = "https://arxiv.org/abs/2409.02290"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"weld_data_workbench.gui" = [
+  "qml/*.qml",
+  "qml/components/*.qml",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+no_implicit_optional = true
+exclude = ["src/weld_data_workbench/gui/"]

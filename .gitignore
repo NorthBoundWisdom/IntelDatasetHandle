@@ -1,0 +1,35 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.freecm/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.whl
+
+# Local dataset/workbench artifacts (never commit raw or derived real data)
+data/
+datasets/
+workspace/
+_demo/
+workbench.yaml
+*.sqlite3
+
+# Local configuration and editor/OS files
+.env
+.env.*
+!.env.example
+config/local.yaml
+.ipynb_checkpoints/
+.DS_Store
+.idea/
+.vscode/
+.freecm

@@ -1,0 +1,34 @@
+schema_version: 1
+dataset_root: /absolute/path/to/extracted/dataset
+workspace_root: /absolute/path/to/workspace
+index_filename: index.sqlite3
+
+scan:
+  workers: 8
+  probe_mode: light
+  follow_symlinks: false
+  include_hidden: false
+  compute_sha256: false
+  max_sensor_preview_rows: 50000
+
+manifest:
+  preferred_names:
+    - manifest.csv
+    - dataset_manifest.csv
+    - annotations.csv
+    - metadata.csv
+  max_search_depth: 3
+
+validation:
+  expected_post_weld_images: 5
+  expected_categories: 12
+  warn_on_unknown_split: true
+  enforce_train_good_only: true
+
+preview:
+  video_frames: 5
+  max_width: 1280
+  image_thumbnail_size: 512
+  audio_max_points: 30000
+  sensor_max_columns: 8
+  sensor_max_rows: 20000
