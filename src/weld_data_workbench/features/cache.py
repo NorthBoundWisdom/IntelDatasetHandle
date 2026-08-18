@@ -80,10 +80,7 @@ def sample_modality_fingerprint(sample: dict[str, Any], modality: str) -> str:
         indexed_sha = asset.get("sha256")
         trustworthy_sha = (
             str(indexed_sha)
-            if indexed_sha
-            and exists
-            and live_size == indexed_size
-            and live_mtime == indexed_mtime
+            if indexed_sha and exists and live_size == indexed_size and live_mtime == indexed_mtime
             else None
         )
         normalized.append(
