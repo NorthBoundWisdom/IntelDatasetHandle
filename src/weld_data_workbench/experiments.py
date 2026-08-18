@@ -19,7 +19,9 @@ def _canonical_json(value: Any) -> str:
 
 
 def _safe_name(value: str) -> str:
-    cleaned = "".join(character if character.isalnum() or character in "-_." else "-" for character in value)
+    cleaned = "".join(
+        character if character.isalnum() or character in "-_." else "-" for character in value
+    )
     return cleaned.strip("-.") or "experiment"
 
 
