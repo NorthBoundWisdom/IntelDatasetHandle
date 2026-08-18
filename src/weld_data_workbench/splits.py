@@ -152,9 +152,7 @@ def _balanced_holdout_assignments(
         for name in split_names
     }
     current_total = {name: 0 for name in split_names}
-    current_category = {
-        name: {category: 0 for category in category_totals} for name in split_names
-    }
+    current_category = {name: {category: 0 for category in category_totals} for name in split_names}
 
     def rarity(session: str) -> float:
         score = 0.0
