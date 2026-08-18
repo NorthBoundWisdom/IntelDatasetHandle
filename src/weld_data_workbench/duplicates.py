@@ -287,7 +287,7 @@ class SignatureCache:
 class _BKNode:
     value: int
     members: list[MediaSignature]
-    children: dict[int, "_BKNode"]
+    children: dict[int, _BKNode]
 
 
 class _BKTree:
@@ -503,9 +503,12 @@ def scan_near_duplicates(
         for distance, other in matches:
             if signature.sample_id == other.sample_id:
                 continue
-            if cross_split_only:
-                if signature.split is None or other.split is None or signature.split == other.split:
-                    continue
+            if cross_split_only and (
+                signature.split is None
+                or other.split is None
+                or signature.split == other.split
+            ):
+                continue
             sample_a, sample_b = sorted((signature.sample_id, other.sample_id))
             key = (sample_a, sample_b)
             if key not in pair_evidence and len(pair_evidence) >= max_pairs:
