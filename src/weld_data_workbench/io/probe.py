@@ -4,6 +4,8 @@ import csv
 import hashlib
 import json
 import logging
+import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -59,10 +61,48 @@ def _count_lines(path: Path) -> int:
     return count
 
 
-def _probe_video(path: Path, mode: ProbeMode) -> tuple[dict[str, Any], bool]:
+def _ffprobe_rate(value: Any) -> float | None:
+    text = str(value or "").strip()
+    if not text or text.casefold() == "n/a":
+        return None
+    try:
+        if "/" in text:
+            numerator, denominator = text.split("/", 1)
+            denominator_value = float(denominator)
+            if denominator_value == 0:
+                return None
+            rate = float(numerator) / denominator_value
+        else:
+            rate = float(text)
+    except (TypeError, ValueError):
+        return None
+    return rate if np.isfinite(rate) and rate > 0 else None
+
+
+def _ffprobe_positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) and number > 0 else None
+
+
+def _ffprobe_positive_int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _probe_video_opencv(path: Path, mode: ProbeMode) -> tuple[dict[str, Any], bool]:
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
-        return {"error": "OpenCV could not open video"}, False
+        capture.release()
+        return {
+            "probe_backend": "opencv",
+            "error": "OpenCV could not open video",
+        }, False
 
     fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
     frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -73,6 +113,7 @@ def _probe_video(path: Path, mode: ProbeMode) -> tuple[dict[str, Any], bool]:
     duration = frames / fps if frames > 0 and fps > 0 else None
 
     metadata: dict[str, Any] = {
+        "probe_backend": "opencv",
         "fps": fps or None,
         "frame_count": frames or None,
         "width": width or None,
@@ -91,10 +132,139 @@ def _probe_video(path: Path, mode: ProbeMode) -> tuple[dict[str, Any], bool]:
             if success and frame is not None and frame.size:
                 decoded_positions.append(frame_index)
         metadata["decoded_probe_frames"] = decoded_positions
+        metadata["decode_verified"] = bool(decoded_positions)
         ok = ok and bool(decoded_positions)
+    elif mode == ProbeMode.FULL:
+        metadata["decoded_probe_frames"] = []
+        metadata["decode_verified"] = False
+        ok = False
 
     capture.release()
+    if not ok:
+        metadata["error"] = (
+            "OpenCV could not decode sampled video frames"
+            if mode == ProbeMode.FULL
+            else "OpenCV returned invalid video dimensions"
+        )
     return metadata, ok
+
+
+def _probe_video_ffprobe(path: Path) -> tuple[dict[str, Any], bool]:
+    executable = shutil.which("ffprobe")
+    if executable is None:
+        return {
+            "probe_backend": "ffprobe",
+            "error": "ffprobe executable is not available",
+        }, False
+
+    command = [
+        executable,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        (
+            "stream=codec_name,codec_tag_string,width,height,avg_frame_rate,"
+            "r_frame_rate,nb_frames,duration:format=duration"
+        ),
+        "-of",
+        "json",
+        str(path),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=15.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "probe_backend": "ffprobe",
+            "error": f"ffprobe execution failed: {exc}",
+        }, False
+
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        return {
+            "probe_backend": "ffprobe",
+            "error": f"ffprobe exited with status {completed.returncode}",
+            "stderr": stderr[-2000:] if stderr else None,
+        }, False
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return {
+            "probe_backend": "ffprobe",
+            "error": f"ffprobe returned invalid JSON: {exc}",
+        }, False
+
+    if not isinstance(payload, dict):
+        return {
+            "probe_backend": "ffprobe",
+            "error": "ffprobe JSON root is not an object",
+        }, False
+    streams = payload.get("streams")
+    if not isinstance(streams, list) or not streams or not isinstance(streams[0], dict):
+        return {
+            "probe_backend": "ffprobe",
+            "error": "ffprobe found no video stream",
+        }, False
+
+    stream = streams[0]
+    format_payload = payload.get("format")
+    format_metadata = format_payload if isinstance(format_payload, dict) else {}
+    fps = _ffprobe_rate(stream.get("avg_frame_rate")) or _ffprobe_rate(
+        stream.get("r_frame_rate")
+    )
+    duration = _ffprobe_positive_float(stream.get("duration")) or _ffprobe_positive_float(
+        format_metadata.get("duration")
+    )
+    frames = _ffprobe_positive_int(stream.get("nb_frames"))
+    width = _ffprobe_positive_int(stream.get("width"))
+    height = _ffprobe_positive_int(stream.get("height"))
+    fourcc = str(stream.get("codec_tag_string") or "").strip() or None
+    codec_name = str(stream.get("codec_name") or "").strip() or None
+
+    metadata: dict[str, Any] = {
+        "probe_backend": "ffprobe",
+        "fps": fps,
+        "frame_count": frames,
+        "width": width,
+        "height": height,
+        "duration_s": duration,
+        "fourcc": fourcc,
+        "codec_name": codec_name,
+        "decode_verified": False,
+    }
+    ok = width is not None and height is not None
+    if not ok:
+        metadata["error"] = "ffprobe returned no usable video dimensions"
+    return metadata, ok
+
+
+def _probe_video(path: Path, mode: ProbeMode) -> tuple[dict[str, Any], bool]:
+    opencv_metadata, opencv_ok = _probe_video_opencv(path, mode)
+    if opencv_ok:
+        return opencv_metadata, True
+
+    ffprobe_metadata, ffprobe_ok = _probe_video_ffprobe(path)
+    if ffprobe_ok:
+        ffprobe_metadata["fallback_reason"] = opencv_metadata.get(
+            "error", "OpenCV video probe did not validate the asset"
+        )
+        ffprobe_metadata["opencv_metadata"] = opencv_metadata
+        return ffprobe_metadata, True
+
+    return {
+        "probe_backend": "opencv+ffprobe",
+        "error": "OpenCV video probe failed and ffprobe fallback did not validate the asset",
+        "opencv_metadata": opencv_metadata,
+        "ffprobe_metadata": ffprobe_metadata,
+    }, False
 
 
 def _probe_audio(path: Path, mode: ProbeMode) -> tuple[dict[str, Any], bool]:
