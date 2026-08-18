@@ -1,0 +1,2 @@
+Temporary CI trigger for validated consolidated main.
+This branch will be force-reset to main after CI completes.
