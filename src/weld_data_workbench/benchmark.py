@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import resource
 import statistics
 import subprocess
 import sys
@@ -12,6 +11,11 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - resource is unavailable on Windows
+    resource = None  # type: ignore[assignment]
 
 from . import __version__
 from .config import AppConfig
@@ -73,6 +77,8 @@ def summarize_latency_seconds(values: list[float]) -> LatencyStats:
 
 
 def _peak_rss_bytes() -> int | None:
+    if resource is None:
+        return None
     try:
         raw = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     except (AttributeError, OSError, ValueError):
