@@ -188,6 +188,13 @@ def generate_real_schema_fixture(
             "VAL",
             "missing_sensor_column",
         ),
+        (
+            "10_undercut_03-22-23_BSK46",
+            "04-03-23-0022-00",
+            "Undercut",
+            "TEST",
+            "corrupt_sensor",
+        ),
     ]
     counts_by_session: dict[str, int] = {}
     for session, *_rest in plan:
@@ -215,12 +222,17 @@ def generate_real_schema_fixture(
                 seed=item_seed,
             )
 
-        _write_sensor(
-            sensor,
-            seed=item_seed,
-            missing_column=special == "missing_sensor_column",
-            extra_column=special == "extra_sensor",
-        )
+        if special == "corrupt_sensor":
+            # Deliberately invalid UTF-8 after a plausible header. Pandas must fail
+            # the probe rather than silently treating the asset as an empty schema.
+            sensor.write_bytes(b"Date,Time,Primary Weld Current\n\xff\xfe\xff\x80")
+        else:
+            _write_sensor(
+                sensor,
+                seed=item_seed,
+                missing_column=special == "missing_sensor_column",
+                extra_column=special == "extra_sensor",
+            )
         if special != "missing_images":
             _write_images(
                 images,
