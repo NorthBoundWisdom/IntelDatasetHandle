@@ -6,7 +6,7 @@ import os
 import platform
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,9 @@ def _canonical_json(value: Any) -> str:
 
 
 def _safe_name(value: str) -> str:
-    cleaned = "".join(character if character.isalnum() or character in "-_." else "-" for character in value)
+    cleaned = "".join(
+        character if character.isalnum() or character in "-_." else "-" for character in value
+    )
     return cleaned.strip("-.") or "experiment"
 
 
@@ -94,7 +96,7 @@ class ExperimentRegistry:
         seeds: dict[str, int] | None = None,
         notes: str | None = None,
     ) -> ExperimentHandle:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         identity = {
             "name": name,
             "config": config,

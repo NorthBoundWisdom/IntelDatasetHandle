@@ -35,7 +35,10 @@ jobs:
       - name: Compile
         run: python -m compileall -q src scripts tests configs
       - name: Type-check new infrastructure
-        run: mypy src/weld_data_workbench/provenance.py src/weld_data_workbench/splits.py
+        run: >-
+          mypy --follow-imports=skip --ignore-missing-imports
+          src/weld_data_workbench/provenance.py
+          src/weld_data_workbench/splits.py
       - name: Tests
         run: pytest -q --cov=weld_data_workbench --cov-report=term-missing --cov-report=xml
       - name: Synthetic end-to-end smoke

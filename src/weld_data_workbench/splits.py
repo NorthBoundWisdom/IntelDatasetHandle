@@ -14,7 +14,7 @@ SPLIT_ARTIFACT_SCHEMA_VERSION = 1
 
 
 def _stable_unit(seed: int, value: str) -> float:
-    digest = hashlib.sha256(f"{seed}:{value}".encode("utf-8")).digest()
+    digest = hashlib.sha256(f"{seed}:{value}".encode()).digest()
     return int.from_bytes(digest[:8], "big") / float(2**64)
 
 
@@ -51,9 +51,7 @@ def audit_upstream_split(config: AppConfig) -> LeakageAudit:
             by_session[str(session_id)][str(split)] = int(count)
 
         cross = {
-            session: sorted(splits)
-            for session, splits in by_session.items()
-            if len(splits) > 1
+            session: sorted(splits) for session, splits in by_session.items() if len(splits) > 1
         }
         cross_samples = sum(sum(by_session[session].values()) for session in cross)
 
@@ -118,7 +116,9 @@ def session_holdout_assignments(
     return assignments
 
 
-def grouped_kfold_assignments(config: AppConfig, *, folds: int = 5, seed: int = 0) -> dict[str, int]:
+def grouped_kfold_assignments(
+    config: AppConfig, *, folds: int = 5, seed: int = 0
+) -> dict[str, int]:
     if folds < 2:
         raise ValueError("folds must be at least 2")
     with connect_database(config.index_path, read_only=True) as connection:
@@ -165,21 +165,24 @@ def write_split_artifact(
     test: float = 0.15,
     folds: int = 5,
 ) -> dict[str, Any]:
+    sessions: dict[str, str | int]
     if mode == "holdout":
-        sessions: dict[str, str | int] = session_holdout_assignments(
+        holdout = session_holdout_assignments(
             config,
             seed=seed,
             train=train,
             validation=validation,
             test=test,
         )
+        sessions = {session: split for session, split in holdout.items()}
         parameters: dict[str, Any] = {
             "train": train,
             "validation": validation,
             "test": test,
         }
     elif mode == "kfold":
-        sessions = grouped_kfold_assignments(config, folds=folds, seed=seed)
+        kfold = grouped_kfold_assignments(config, folds=folds, seed=seed)
+        sessions = {session: fold for session, fold in kfold.items()}
         parameters = {"folds": folds}
     else:
         raise ValueError("mode must be 'holdout' or 'kfold'")
