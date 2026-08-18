@@ -165,21 +165,24 @@ def write_split_artifact(
     test: float = 0.15,
     folds: int = 5,
 ) -> dict[str, Any]:
+    sessions: dict[str, str | int]
     if mode == "holdout":
-        sessions: dict[str, str | int] = session_holdout_assignments(
+        holdout = session_holdout_assignments(
             config,
             seed=seed,
             train=train,
             validation=validation,
             test=test,
         )
+        sessions = {session: split for session, split in holdout.items()}
         parameters: dict[str, Any] = {
             "train": train,
             "validation": validation,
             "test": test,
         }
     elif mode == "kfold":
-        sessions = grouped_kfold_assignments(config, folds=folds, seed=seed)
+        kfold = grouped_kfold_assignments(config, folds=folds, seed=seed)
+        sessions = {session: fold for session, fold in kfold.items()}
         parameters = {"folds": folds}
     else:
         raise ValueError("mode must be 'holdout' or 'kfold'")
