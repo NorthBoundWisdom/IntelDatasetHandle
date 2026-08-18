@@ -80,6 +80,7 @@ all = [
 
 [project.scripts]
 weldtool = "weld_data_workbench.cli:app"
+weldinfra = "weld_data_workbench.infrastructure_cli:app"
 weldworkbench-gui = "weld_data_workbench.gui.app:main"
 
 [project.urls]
@@ -104,6 +105,25 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+source = ["weld_data_workbench"]
+omit = [
+  "*/weld_data_workbench/__main__.py",
+  "*/weld_data_workbench/cli.py",
+  "*/weld_data_workbench/infrastructure_cli.py",
+  "*/weld_data_workbench/gui/*",
+  "*/weld_data_workbench/logging.py",
+  "*/weld_data_workbench/ml/autoencoder.py",
+  "*/weld_data_workbench/ml/torch_dataset.py",
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false
 
 [tool.ruff]
 line-length = 100

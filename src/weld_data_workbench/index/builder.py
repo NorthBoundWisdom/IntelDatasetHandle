@@ -22,6 +22,7 @@ from .database import (
     set_meta,
     utc_now_iso,
 )
+from .incremental import PreviousIndexReuse, scan_contract
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ class BuildSummary:
     warning_count: int
     manifest_path: Path | None
     discovery_notes: list[str]
+    added_sample_count: int = 0
+    reused_sample_count: int = 0
+    probed_sample_count: int = 0
+    failed_probe_count: int = 0
+    removed_sample_count: int = 0
 
 
 ProgressCallback = Callable[[int, int, str], None]
@@ -57,6 +63,8 @@ class IndexBuilder:
         self.config.ensure_workspace_dirs()
         discovery = discover_dataset(self.config)
         total = len(discovery.candidates)
+        current_sample_ids = {candidate.sample_id for candidate in discovery.candidates}
+        previous = PreviousIndexReuse(self.config)
 
         temporary = self._temporary_path()
         for suffix in ("", "-wal", "-shm"):
@@ -70,6 +78,7 @@ class IndexBuilder:
         set_meta(connection, "workspace_root", self.config.workspace_root.as_posix())
         set_meta(connection, "created_at", utc_now_iso())
         set_meta(connection, "probe_mode", self.config.scan.probe_mode)
+        set_meta(connection, "scan_contract", scan_contract(self.config))
         set_meta(connection, "discovery_notes", discovery.notes)
 
         manifest_path: Path | None = None
@@ -105,17 +114,35 @@ class IndexBuilder:
             )
 
         completed = 0
+        reused = 0
+        probed = 0
+        failed_probes = 0
+        added = len(current_sample_ids - previous.previous_sample_ids)
+        removed = len(previous.previous_sample_ids - current_sample_ids)
         worker_count = workers or self.config.scan.workers
         futures: dict[Future, str] = {}
 
         try:
             with ThreadPoolExecutor(
-                max_workers=worker_count, thread_name_prefix="weld-probe"
+                max_workers=worker_count,
+                thread_name_prefix="weld-probe",
             ) as executor:
                 for candidate in discovery.candidates:
+                    cached = previous.try_reuse(candidate)
+                    if cached is not None:
+                        insert_probe(connection, cached)
+                        reused += 1
+                        completed += 1
+                        if completed % 100 == 0:
+                            connection.commit()
+                        if progress:
+                            progress(completed, total, candidate.relpath)
+                        continue
+
                     futures[executor.submit(probe_sample, candidate, self.config)] = (
                         candidate.relpath
                     )
+                    probed += 1
 
                 for future in as_completed(futures):
                     relpath = futures[future]
@@ -125,6 +152,7 @@ class IndexBuilder:
                         Exception
                     ) as exc:  # isolate a programmer/decoder failure to one candidate
                         logger.exception("Unhandled probe failure for %s", relpath)
+                        failed_probes += 1
                         insert_issue(
                             connection,
                             Issue(
@@ -155,16 +183,35 @@ class IndexBuilder:
                 "asset_count",
                 connection.execute("SELECT COUNT(*) FROM assets").fetchone()[0],
             )
+            set_meta(
+                connection,
+                "incremental_summary",
+                {
+                    "added_samples": added,
+                    "reused_samples": reused,
+                    "probed_samples": probed,
+                    "failed_probes": failed_probes,
+                    "removed_samples": removed,
+                    "previous_index_compatible": previous.compatible,
+                },
+            )
             connection.commit()
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             connection.close()
+            # Release the previous SQLite handle before replacing the path. This is
+            # required on Windows and also makes the atomic swap semantics explicit.
+            previous.close()
 
             # Remove old sidecar files before atomic replacement.
             for suffix in ("-wal", "-shm"):
                 Path(str(self.config.index_path) + suffix).unlink(missing_ok=True)
             os.replace(temporary, self.config.index_path)
-        except Exception:
+        except BaseException:
+            # Cleanup also covers KeyboardInterrupt/SystemExit. The exception is
+            # never swallowed; this block only preserves the previous atomic index
+            # and removes a partial `.building` database.
             connection.close()
+            previous.close()
             for suffix in ("", "-wal", "-shm"):
                 Path(str(temporary) + suffix).unlink(missing_ok=True)
             raise
@@ -190,6 +237,11 @@ class IndexBuilder:
             warning_count=warning_count,
             manifest_path=manifest_path,
             discovery_notes=discovery.notes,
+            added_sample_count=added,
+            reused_sample_count=reused,
+            probed_sample_count=probed,
+            failed_probe_count=failed_probes,
+            removed_sample_count=removed,
         )
         logger.info("Index build summary: %s", json.dumps(asdict(summary), default=str))
         return summary
