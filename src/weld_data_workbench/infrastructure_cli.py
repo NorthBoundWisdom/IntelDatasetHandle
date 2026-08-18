@@ -13,6 +13,12 @@ from .config import load_config
 from .duplicates import scan_near_duplicates, write_near_duplicate_report
 from .index.repository import DatasetRepository
 from .io.paths import safe_slug
+from .policy_compare import (
+    compare_split_policies,
+    load_predictions,
+    load_verified_holdout_artifact,
+    write_policy_comparison,
+)
 from .provenance import create_snapshot, load_snapshot, verify_snapshot
 from .splits import audit_upstream_split, write_split_artifact
 
@@ -146,6 +152,43 @@ def split_create(
             "output": str(output.expanduser().resolve()),
         }
     )
+
+
+@app.command("compare-splits")
+def compare_splits_command(
+    workspace: WorkspaceOption,
+    predictions: Annotated[Path, typer.Option("--predictions", exists=True, dir_okay=False)],
+    split_artifact: Annotated[
+        Path, typer.Option("--split-artifact", exists=True, dir_okay=False)
+    ],
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    score_col: str = typer.Option("anomaly_score"),
+    label_col: str | None = typer.Option(None),
+    upstream_threshold: float | None = typer.Option(None),
+    experimental_threshold: float | None = typer.Option(None),
+    bootstrap_iterations: int = typer.Option(500, min=0),
+    bootstrap_seed: int = typer.Option(0),
+) -> None:
+    """Compare one prediction set under upstream and session-disjoint holdouts."""
+    config = load_config(workspace)
+    frame = load_predictions(predictions)
+    artifact = load_verified_holdout_artifact(split_artifact)
+    report = compare_split_policies(
+        config,
+        frame,
+        artifact,
+        score_col=score_col,
+        label_col=label_col,
+        upstream_threshold=upstream_threshold,
+        experimental_threshold=experimental_threshold,
+        bootstrap_iterations=bootstrap_iterations,
+        bootstrap_seed=bootstrap_seed,
+    )
+    destination = output or (config.reports_dir / "split-policy-comparison.json")
+    write_policy_comparison(report, destination)
+    report = dict(report)
+    report["output"] = str(destination.expanduser().resolve())
+    console.print_json(data=report)
 
 
 @app.command("benchmark")
