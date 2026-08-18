@@ -26,5 +26,17 @@ def test_api_read_paths(indexed_workspace) -> None:
     assert detail.status_code == 200
     assert detail.json()["sample_id"] == sample_id
 
+    alignment = client.get(f"/api/samples/{sample_id}/alignment")
+    assert alignment.status_code == 200
+    alignment_payload = alignment.json()
+    assert alignment_payload["sample_id"] == sample_id
+    assert alignment_payload["schema_version"] == 2
+    assert set(alignment_payload["estimates"]) == {"audio", "video", "sensor"}
+    assert "durations_s" in alignment_payload
+    assert "quality" in alignment_payload
+
+    missing_alignment = client.get("/api/samples/not-a-real-sample/alignment")
+    assert missing_alignment.status_code == 404
+
     media = client.get(f"/api/samples/{sample_id}/media/image/0")
     assert media.status_code == 200

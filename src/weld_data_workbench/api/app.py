@@ -9,6 +9,7 @@ try:
 except ImportError as exc:  # pragma: no cover - optional dependency
     raise RuntimeError("Install the API extra: pip install -e '.[api]'") from exc
 
+from ..alignment import estimate_sample_alignment
 from ..config import load_config
 from ..index.repository import DatasetRepository
 from ..previews.generator import PreviewGenerator
@@ -82,6 +83,21 @@ def create_app(workspace_or_config: Path | str) -> FastAPI:
         if record is None:
             raise HTTPException(status_code=404, detail="Sample not found")
         return record
+
+    @app.get("/api/samples/{sample_id}/alignment")
+    def sample_alignment(sample_id: str) -> dict[str, Any]:
+        """Compute inspectable multimodal activity intervals and relative offsets."""
+
+        record = repository.get_sample(sample_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Sample not found")
+        try:
+            return estimate_sample_alignment(record).to_dict()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Alignment estimation failed: {exc}",
+            ) from exc
 
     @app.post("/api/samples/{sample_id}/previews", response_model=PreviewResponse)
     def generate_previews(sample_id: str, force: bool = False) -> PreviewResponse:
