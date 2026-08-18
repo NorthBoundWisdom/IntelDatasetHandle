@@ -158,9 +158,7 @@ def split_create(
 def compare_splits_command(
     workspace: WorkspaceOption,
     predictions: Annotated[Path, typer.Option("--predictions", exists=True, dir_okay=False)],
-    split_artifact: Annotated[
-        Path, typer.Option("--split-artifact", exists=True, dir_okay=False)
-    ],
+    split_artifact: Annotated[Path, typer.Option("--split-artifact", exists=True, dir_okay=False)],
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
     score_col: str = typer.Option("anomaly_score"),
     label_col: str | None = typer.Option(None),
