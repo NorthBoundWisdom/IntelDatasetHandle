@@ -81,26 +81,26 @@ def _validate_ratios(train: float, validation: float, test: float) -> None:
         raise ValueError("Split ratios must sum to 1.0")
 
 
-def session_holdout_assignments(
-    config: AppConfig,
-    *,
-    seed: int = 0,
-    train: float = 0.7,
-    validation: float = 0.15,
-    test: float = 0.15,
-) -> dict[str, str]:
-    """Assign each acquisition session to exactly one experimental partition."""
-
-    _validate_ratios(train, validation, test)
+def _session_category_counts(config: AppConfig) -> dict[str, dict[str, int]]:
     with connect_database(config.index_path, read_only=True) as connection:
-        sessions = [
-            str(row[0])
-            for row in connection.execute(
-                "SELECT DISTINCT session_id FROM samples "
-                "WHERE session_id IS NOT NULL ORDER BY session_id"
-            ).fetchall()
-        ]
+        rows = connection.execute(
+            "SELECT session_id, COALESCE(category, 'Unknown'), COUNT(*) "
+            "FROM samples WHERE session_id IS NOT NULL "
+            "GROUP BY session_id, category ORDER BY session_id, category"
+        ).fetchall()
+    result: dict[str, dict[str, int]] = defaultdict(dict)
+    for session_id, category, count in rows:
+        result[str(session_id)][str(category)] = int(count)
+    return dict(result)
 
+
+def _hash_holdout_assignments(
+    sessions: list[str],
+    *,
+    seed: int,
+    train: float,
+    validation: float,
+) -> dict[str, str]:
     train_edge = train
     validation_edge = train + validation
     assignments: dict[str, str] = {}
@@ -114,6 +114,140 @@ def session_holdout_assignments(
             split = "test"
         assignments[session] = split
     return assignments
+
+
+def _balanced_holdout_assignments(
+    session_categories: dict[str, dict[str, int]],
+    *,
+    seed: int,
+    train: float,
+    validation: float,
+    test: float,
+) -> dict[str, str]:
+    """Greedily keep whole sessions while approximating size/category targets.
+
+    This is a deterministic group-stratification heuristic rather than an exact
+    optimizer. Sessions containing rarer categories are placed first, then each
+    candidate placement minimizes normalized global target error. It is suitable
+    for generating reproducible experimental partitions while making the
+    unavoidable group-vs-balance tradeoff visible in the split artifact.
+    """
+
+    ratios = {"train": train, "validation": validation, "test": test}
+    split_names = tuple(name for name, ratio in ratios.items() if ratio > 0)
+    if not split_names:
+        return {}
+
+    category_totals: dict[str, int] = defaultdict(int)
+    session_totals: dict[str, int] = {}
+    for session, counts in session_categories.items():
+        session_totals[session] = sum(counts.values())
+        for category, count in counts.items():
+            category_totals[category] += count
+    total_samples = sum(session_totals.values())
+
+    target_total = {name: ratios[name] * total_samples for name in split_names}
+    target_category = {
+        name: {category: ratios[name] * total for category, total in category_totals.items()}
+        for name in split_names
+    }
+    current_total = {name: 0 for name in split_names}
+    current_category = {
+        name: {category: 0 for category in category_totals} for name in split_names
+    }
+
+    def rarity(session: str) -> float:
+        score = 0.0
+        for category, count in session_categories[session].items():
+            score += count / max(category_totals[category], 1)
+        return score
+
+    ordered_sessions = sorted(
+        session_categories,
+        key=lambda session: (
+            -rarity(session),
+            -session_totals[session],
+            _stable_unit(seed, session),
+            session,
+        ),
+    )
+
+    def global_cost(candidate_session: str, candidate_split: str) -> float:
+        total_cost = 0.0
+        category_cost = 0.0
+        overfill_cost = 0.0
+        candidate_counts = session_categories[candidate_session]
+        candidate_size = session_totals[candidate_session]
+        for split_name in split_names:
+            proposed_total = current_total[split_name]
+            if split_name == candidate_split:
+                proposed_total += candidate_size
+            target = target_total[split_name]
+            scale = max(target, 1.0)
+            total_cost += ((proposed_total - target) / scale) ** 2
+            if proposed_total > target:
+                overfill_cost += ((proposed_total - target) / scale) ** 2
+
+            for category, category_total in category_totals.items():
+                proposed = current_category[split_name][category]
+                if split_name == candidate_split:
+                    proposed += candidate_counts.get(category, 0)
+                category_target = target_category[split_name][category]
+                category_scale = max(category_target, 1.0)
+                # Rare categories receive naturally larger normalized penalties.
+                category_cost += ((proposed - category_target) / category_scale) ** 2
+
+        return total_cost + 0.35 * category_cost + 0.75 * overfill_cost
+
+    assignments: dict[str, str] = {}
+    for session in ordered_sessions:
+        scored = [
+            (
+                global_cost(session, split_name),
+                _stable_unit(seed, f"{session}:{split_name}"),
+                split_name,
+            )
+            for split_name in split_names
+        ]
+        _cost, _tie, chosen = min(scored)
+        assignments[session] = chosen
+        current_total[chosen] += session_totals[session]
+        for category, count in session_categories[session].items():
+            current_category[chosen][category] += count
+
+    return assignments
+
+
+def session_holdout_assignments(
+    config: AppConfig,
+    *,
+    seed: int = 0,
+    train: float = 0.7,
+    validation: float = 0.15,
+    test: float = 0.15,
+    strategy: str = "balanced",
+) -> dict[str, str]:
+    """Assign each acquisition session to exactly one experimental partition."""
+
+    _validate_ratios(train, validation, test)
+    session_categories = _session_category_counts(config)
+    sessions = sorted(session_categories)
+    if strategy == "hash":
+        return _hash_holdout_assignments(
+            sessions,
+            seed=seed,
+            train=train,
+            validation=validation,
+        )
+    if strategy != "balanced":
+        raise ValueError("strategy must be 'balanced' or 'hash'")
+    return _balanced_holdout_assignments(
+        session_categories,
+        seed=seed,
+        train=train,
+        validation=validation,
+        test=test,
+    )
 
 
 def grouped_kfold_assignments(
@@ -164,6 +298,7 @@ def write_split_artifact(
     validation: float = 0.15,
     test: float = 0.15,
     folds: int = 5,
+    strategy: str = "balanced",
 ) -> dict[str, Any]:
     sessions: dict[str, str | int]
     if mode == "holdout":
@@ -173,17 +308,19 @@ def write_split_artifact(
             train=train,
             validation=validation,
             test=test,
+            strategy=strategy,
         )
         sessions = {session: split for session, split in holdout.items()}
         parameters: dict[str, Any] = {
             "train": train,
             "validation": validation,
             "test": test,
+            "strategy": strategy,
         }
     elif mode == "kfold":
         kfold = grouped_kfold_assignments(config, folds=folds, seed=seed)
         sessions = {session: fold for session, fold in kfold.items()}
-        parameters = {"folds": folds}
+        parameters = {"folds": folds, "strategy": "round_robin_grouped"}
     else:
         raise ValueError("mode must be 'holdout' or 'kfold'")
 
