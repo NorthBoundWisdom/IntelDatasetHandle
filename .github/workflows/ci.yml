@@ -39,8 +39,10 @@ jobs:
           mypy --no-site-packages --follow-imports=skip --ignore-missing-imports
           src/weld_data_workbench/alignment.py
           src/weld_data_workbench/benchmark.py
+          src/weld_data_workbench/duplicates.py
           src/weld_data_workbench/evaluation.py
           src/weld_data_workbench/experiments.py
+          src/weld_data_workbench/policy_compare.py
           src/weld_data_workbench/provenance.py
           src/weld_data_workbench/real_schema_fixture.py
           src/weld_data_workbench/splits.py
