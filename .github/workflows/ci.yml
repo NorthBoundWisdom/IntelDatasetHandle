@@ -39,6 +39,7 @@ jobs:
           mypy --no-site-packages --follow-imports=skip --ignore-missing-imports
           src/weld_data_workbench/alignment.py
           src/weld_data_workbench/benchmark.py
+          src/weld_data_workbench/benchmark_suite.py
           src/weld_data_workbench/duplicates.py
           src/weld_data_workbench/evaluation.py
           src/weld_data_workbench/experiments.py
@@ -80,4 +81,5 @@ jobs:
           /tmp/weld-wheel-venv/bin/pip install dist/*.whl
           /tmp/weld-wheel-venv/bin/weldtool --help
           /tmp/weld-wheel-venv/bin/weldinfra --help
+          /tmp/weld-wheel-venv/bin/weldbench --help
           /tmp/weld-wheel-venv/bin/weldtool synthetic --output /tmp/weld-synthetic
