@@ -36,7 +36,7 @@ jobs:
         run: python -m compileall -q src scripts tests configs
       - name: Type-check infrastructure
         run: >-
-          mypy --follow-imports=skip --ignore-missing-imports
+          mypy --no-site-packages --follow-imports=skip --ignore-missing-imports
           src/weld_data_workbench/alignment.py
           src/weld_data_workbench/benchmark.py
           src/weld_data_workbench/evaluation.py
