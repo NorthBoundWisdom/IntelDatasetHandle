@@ -6,7 +6,7 @@ import os
 import platform
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -94,7 +94,7 @@ class ExperimentRegistry:
         seeds: dict[str, int] | None = None,
         notes: str | None = None,
     ) -> ExperimentHandle:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         identity = {
             "name": name,
             "config": config,
