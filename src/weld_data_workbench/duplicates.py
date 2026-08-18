@@ -322,11 +322,7 @@ class _BKTree:
                 result.extend((distance, member) for member in node.members)
             low = distance - max_distance
             high = distance + max_distance
-            stack.extend(
-                child
-                for edge, child in node.children.items()
-                if low <= edge <= high
-            )
+            stack.extend(child for edge, child in node.children.items() if low <= edge <= high)
         return result
 
 
@@ -387,7 +383,9 @@ def _load_signatures(
                     MediaSignature(
                         asset_id=asset_id,
                         sample_id=sample_id,
-                        session_id=str(row["session_id"]) if row["session_id"] is not None else None,
+                        session_id=str(row["session_id"])
+                        if row["session_id"] is not None
+                        else None,
                         split=str(row["split"]) if row["split"] is not None else None,
                         kind=kind,
                         ordinal=int(row["ordinal"]),
@@ -504,9 +502,7 @@ def scan_near_duplicates(
             if signature.sample_id == other.sample_id:
                 continue
             if cross_split_only and (
-                signature.split is None
-                or other.split is None
-                or signature.split == other.split
+                signature.split is None or other.split is None or signature.split == other.split
             ):
                 continue
             sample_a, sample_b = sorted((signature.sample_id, other.sample_id))
@@ -554,9 +550,7 @@ def scan_near_duplicates(
                 "quality": quality,
                 "image_matches": sum(item["kind"] == "image" for item in evidence),
                 "video_matches": sum(item["kind"] == "video" for item in evidence),
-                "best_normalized_distance": min(
-                    item["normalized_distance"] for item in evidence
-                ),
+                "best_normalized_distance": min(item["normalized_distance"] for item in evidence),
                 "evidence": evidence,
             }
         )
