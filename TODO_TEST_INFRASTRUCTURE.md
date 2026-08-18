@@ -11,10 +11,12 @@ This roadmap tracks the infrastructure phase after the first successful integrat
 - Public FLAC assets are mono 16 kHz PCM-16.
 - The upstream train/validation/test counts match the paper, but 216 session IDs cross official split boundaries.
 - Cached image/video perceptual hashes support bounded near-duplicate leakage triage, and one immutable prediction set can be compared under upstream and session-disjoint policies.
+- Multimodal timing analysis now estimates start/end/active duration, explicitly marks right-censored recording ends, and supports batch/session quality reports plus diagnostic plots.
+- The comprehensive benchmark suite measures repository queries, scratch full/no-op scans, preview generation/cache reuse, per-modality feature throughput/cache reuse, and in-process API throughput.
 - CLI, SQLite repository, validation, preview generation, resumable handcrafted features, Isolation Forest baseline, FastAPI, native QML, FreeCM workflow, experiment/evaluation utilities, and synthetic/real-schema fixtures are present.
-- Public CI currently runs Linux Python 3.11/3.12/3.13, Ruff, formatting, compileall, scoped mypy, pytest with an 80% core coverage gate, synthetic smoke, wheel build, and clean-wheel CLI smoke.
+- Public CI runs Linux Python 3.11/3.12/3.13, Ruff, formatting, compileall, scoped mypy, pytest with an 80% core coverage gate, synthetic smoke, wheel build, and clean-wheel CLI smoke.
 
-The high-level rule remains: **do not optimize research metrics until dataset identity, split semantics, provenance, and evaluation contracts are reproducible.**
+The high-level rule remains: **do not optimize research metrics until dataset identity, split semantics, provenance, timing semantics, and evaluation contracts are reproducible.**
 
 ---
 
@@ -135,18 +137,23 @@ Delivered for current handcrafted feature extractors. Learned CPU/GPU extractors
 
 ## P1-B — benchmark and regression harness
 
-- [x] Add `weldinfra benchmark` with machine-readable JSON output.
-- [ ] Measure full light-scan wall time in an explicit scratch benchmark workspace.
-- [ ] Measure no-op incremental-scan wall time.
+- [x] Add lightweight `weldinfra benchmark` repository/read-path JSON reports.
+- [x] Add comprehensive `weldbench` / `benchmark_suite` report for expensive and modality-level measurements.
+- [x] Measure full light-scan wall time in an explicit scratch benchmark workspace when requested.
+- [x] Measure immediate no-op incremental-scan wall time and verify all unchanged samples are reused.
 - [x] Measure process peak RSS where the platform exposes it.
 - [x] Measure SQLite size.
 - [x] Measure sample-list and sample-detail P50/P95 latency.
-- [ ] Measure preview-generation latency by modality.
-- [ ] Measure handcrafted/learned feature throughput.
-- [ ] Measure concurrent API read throughput.
+- [x] Measure preview-generation latency by modality plus cold/warm bundle-cache behavior.
+- [x] Measure handcrafted per-modality feature throughput and warm cache reuse.
+- [x] Measure concurrent in-process FastAPI read throughput and request latency.
 - [ ] Add a generated large synthetic benchmark fixture in CI; keep the real 40 GB dataset local/nightly only.
 - [x] Store benchmark metadata with platform, Python version, git SHA, and snapshot ID.
-- [ ] Add regression thresholds only after stable baselines are collected.
+- [ ] Add regression thresholds only after stable baselines are collected on the main development machine.
+
+### Exit criteria
+
+The measurement surface is implemented. Remaining work is baseline collection, a larger deterministic CI fixture, and conservative regression threshold policy rather than additional timing plumbing.
 
 ---
 
@@ -154,19 +161,28 @@ Delivered for current handcrafted feature extractors. Learned CPU/GPU extractors
 
 - [x] Resolve explicit sensor time axes from numeric elapsed-time fields or known Date+Time/time-only encodings without inventing an unknown sample rate.
 - [x] Estimate welding onset from sensor current/voltage transitions, audio framed RMS, and video illumination/arc change.
-- [ ] Estimate welding end/active interval in addition to onset.
-- [x] Report per-modality offsets, confidence, method, and diagnostic details.
-- [x] Build a generated alignment fixture with known sensor/audio/video onset offsets and bounded-error tests.
+- [x] Estimate welding end/active interval in each modality using sustained-release logic and short-gap bridging.
+- [x] Explicitly report `end_censored` when activity continues to the end of the observed recording instead of pretending a physical weld end was observed.
+- [x] Report per-modality start offsets, end offsets, duration, confidence, method, and diagnostic details.
+- [x] Report per-sample start/end/duration spread and a coarse quality classification for triage.
+- [x] Build generated tests with known sensor/audio/video onset and release times plus bounded-error assertions.
 - [x] Parse the audited `%m-%d-%y %H:%M:%S.%f` sensor timestamp shape explicitly before mixed-format fallback.
-- [ ] Add alignment quality plots and batch/session distribution reports.
+- [x] Add `weldinfra alignment-batch` with category/split/health/query filtering, bounded parallelism, deterministic sample order, JSON and CSV output.
+- [x] Add category/split/session aggregate summaries, modality success/error/censoring statistics, and worst-session triage.
+- [x] Add aggregate start-offset, start-spread, and active-duration PNG diagnostics.
+- [x] Expose per-sample alignment through `/api/samples/{sample_id}/alignment` for UI integration.
 - [x] Keep alignment as an explicit derived report; never silently shift raw media.
+
+### Exit criteria
+
+The data-side alignment contract is complete enough for UI synchronization and research diagnostics. Future algorithm changes should be driven by observed real-data failure modes rather than speculative timestamp formats or hidden automatic shifts.
 
 ---
 
 ## P1-D — QML workbench testability and analysis UX
 
-- [ ] Move preview/feature jobs to cancellable background tasks.
-- [ ] Add synchronized video/audio/sensor timeline playback using explicit alignment metadata.
+- [ ] Move preview/feature/alignment jobs to cancellable background tasks.
+- [ ] Add synchronized video/audio/sensor timeline playback using the explicit schema-v2 alignment interval/offset metadata.
 - [ ] Add Good-versus-defect compare mode matched by process parameters.
 - [ ] Add histogram/pivot exploration by category, weld type, steel, thickness, split, and session.
 - [ ] Add issue triage and user annotations in a separate overlay database.
@@ -192,7 +208,7 @@ Thresholds must be calibrated outside the evaluation frame (normally train/valid
 
 ## P2-B — stronger unimodal baselines
 
-Only after the remaining leakage/reporting work is stable:
+Only after the measurement and UI-analysis boundaries are stable:
 
 - [ ] Audio log-STFT + bounded convolutional/shallow autoencoder baseline.
 - [ ] Sensor-only statistical and temporal baselines.
@@ -227,8 +243,9 @@ Only after the remaining leakage/reporting work is stable:
 
 ## Next recommended implementation order
 
-1. Expand benchmark harness: scratch full/no-op scan, preview/features/API throughput, and a generated large synthetic benchmark fixture.
-2. Complete alignment with active-interval/end detection and batch quality reporting.
-3. Build QML synchronized timeline and compare/annotation workflows on top of alignment/job APIs.
-4. Add stronger unimodal audio/sensor/video/image baselines once the remaining measurement boundary is stable.
-5. Move to calibrated fusion and online replay after unimodal results are reproducible.
+1. Build the cancellable background task layer shared by preview, feature, and alignment work.
+2. Add QML synchronized timeline playback using schema-v2 alignment offsets and active intervals.
+3. Add QML compare/annotation/histogram workflows on top of the read-only dataset core and separate overlay state.
+4. Add a larger deterministic benchmark fixture and begin collecting stable real-machine benchmark baselines.
+5. Add stronger unimodal audio/sensor/video/image baselines after the analysis UI and timing contract are stable.
+6. Move to calibrated fusion and online replay only after unimodal results are reproducible under both split policies.

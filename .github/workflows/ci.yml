@@ -38,6 +38,7 @@ jobs:
         run: >-
           mypy --no-site-packages --follow-imports=skip --ignore-missing-imports
           src/weld_data_workbench/alignment.py
+          src/weld_data_workbench/alignment_batch.py
           src/weld_data_workbench/benchmark.py
           src/weld_data_workbench/benchmark_suite.py
           src/weld_data_workbench/duplicates.py

@@ -18,19 +18,22 @@
 - [x] Add incremental re-indexing keyed by live asset path/size/mtime and optional trusted checksum, while preserving atomic index replacement.
 - [x] Add resumable per-sample/per-modality feature extraction with persistent job state and failure isolation.
 - [x] Add ffprobe metadata fallback for AVI files OpenCV cannot open or validate, while keeping decode verification explicit.
-- [x] Add audio/video/sensor alignment diagnostics based on sensor transitions, audio onset, and illumination changes.
 - [x] Add explicit sensor time-axis normalization for numeric elapsed-time fields and the audited Date+Time/time-only forms; do not invent an unknown sampling rate.
 - [ ] Extend the time-axis parser only when additional real sensor encodings are observed and can be regression-tested.
+- [x] Estimate audio/video/sensor welding onset and active interval/end, including explicit end-censoring when activity continues through recording end.
+- [x] Add dataset-wide alignment quality reports, per-session/category/split summaries, CSV export, and aggregate diagnostic plots.
+- [x] Expose per-sample alignment through the read-only FastAPI surface for the QML synchronized-timeline work.
 - [x] Add cached perceptual image/video near-duplicate candidate detection for cross-split leakage triage.
 - [x] Add deterministic dataset snapshots containing manifest and canonical semantic index hashes plus live-asset integrity checks.
 - [x] Add deterministic session-disjoint holdout and session-grouped K-fold utilities.
 - [x] Add official-versus-session-disjoint evaluation comparison for one immutable prediction set.
 - [x] Add crash/interruption tests proving failed rebuilds preserve the previous valid index.
-- [x] Add machine-readable repository benchmark reports; continue expanding scan/preview/feature/API throughput measurements in the detailed roadmap.
+- [x] Add comprehensive machine-readable benchmarking for repository reads, scratch full/no-op scans, previews, feature extraction/cache reuse, and in-process API throughput.
+- [ ] Add a generated large benchmark fixture and collect stable real-machine baselines before introducing performance regression thresholds.
 
 ## P1 — user interface
 
-- [ ] Move preview/feature generation to cancellable background job queues.
+- [ ] Move preview/feature/alignment generation to cancellable background job queues.
 - [ ] Add synchronized playback cursor across video, audio waveform, and sensor plot using explicit alignment reports.
 - [ ] Add issue triage and user annotations in a separate overlay database.
 - [ ] Add compare mode for Good versus defective samples with matched process parameters.

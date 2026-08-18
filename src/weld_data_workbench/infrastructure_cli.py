@@ -8,6 +8,13 @@ import typer
 from rich.console import Console
 
 from .alignment import estimate_sample_alignment, write_alignment_report
+from .alignment_batch import (
+    AlignmentBatchOptions,
+    run_alignment_batch,
+    write_alignment_batch_csv,
+    write_alignment_batch_json,
+    write_alignment_plots,
+)
 from .benchmark import run_repository_benchmark, write_benchmark_report
 from .config import load_config
 from .duplicates import scan_near_duplicates, write_near_duplicate_report
@@ -222,7 +229,7 @@ def alignment_command(
     sample_id: Annotated[str, typer.Option("--sample-id")],
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
 ) -> None:
-    """Estimate explicit audio/video/sensor onset offsets for one indexed sample."""
+    """Estimate audio/video/sensor active intervals and relative timing for one sample."""
     config = load_config(workspace)
     sample = DatasetRepository(config.index_path, config.dataset_root).get_sample(sample_id)
     if sample is None:
@@ -233,6 +240,52 @@ def alignment_command(
     payload = report.to_dict()
     payload["output"] = str(destination.expanduser().resolve())
     console.print_json(data=payload)
+
+
+@app.command("alignment-batch")
+def alignment_batch_command(
+    workspace: WorkspaceOption,
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    query: Annotated[str | None, typer.Option("--query", "-q")] = None,
+    category: Annotated[str | None, typer.Option("--category")] = None,
+    split: Annotated[str | None, typer.Option("--split")] = None,
+    health: Annotated[str | None, typer.Option("--health")] = None,
+    limit: Annotated[int | None, typer.Option("--limit", min=1)] = None,
+    workers: Annotated[int, typer.Option("--workers", min=1, max=64)] = 4,
+    plots: bool = typer.Option(
+        True,
+        "--plots/--no-plots",
+        help="Generate aggregate offset/spread/duration PNG diagnostics.",
+    ),
+) -> None:
+    """Run dataset-wide alignment quality analysis and emit JSON/CSV/plots."""
+    config = load_config(workspace)
+    repository = DatasetRepository(config.index_path, config.dataset_root)
+    report = run_alignment_batch(
+        repository,
+        options=AlignmentBatchOptions(
+            query=query,
+            category=category,
+            split=split,
+            health=health,
+            limit=limit,
+            workers=workers,
+        ),
+    )
+    destination = output or (config.reports_dir / "alignment-batch.json")
+    json_path = write_alignment_batch_json(report, destination)
+    csv_path = write_alignment_batch_csv(report, destination.with_suffix(".csv"))
+    plot_paths = (
+        write_alignment_plots(report, destination.parent / "alignment-plots") if plots else []
+    )
+    console.print_json(
+        data={
+            "output": str(json_path),
+            "csv": str(csv_path),
+            "plots": [str(path) for path in plot_paths],
+            "summary": report.summary,
+        }
+    )
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import soundfile as sf
 
-ALIGNMENT_SCHEMA_VERSION = 1
+ALIGNMENT_SCHEMA_VERSION = 2
 
 _KNOWN_SENSOR_DATETIME_FORMATS = (
     "%m-%d-%y %H:%M:%S.%f",
@@ -23,12 +23,22 @@ _KNOWN_SENSOR_DATETIME_FORMATS = (
 
 @dataclass(frozen=True, slots=True)
 class OnsetEstimate:
+    """Backward-compatible modality activity estimate.
+
+    The class kept its historical name because downstream callers already consume
+    ``onset_s`` and ``confidence``. Schema v2 extends the same record with the
+    estimated activity end and duration rather than introducing a parallel result
+    type that would force every client to migrate at once.
+    """
+
     modality: str
     onset_s: float | None
     confidence: float
     method: str
     details: dict[str, Any]
     error: str | None = None
+    end_s: float | None = None
+    duration_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +48,12 @@ class AlignmentReport:
     reference_modality: str | None
     estimates: dict[str, OnsetEstimate]
     offsets_s: dict[str, float | None]
+    end_offsets_s: dict[str, float | None]
+    durations_s: dict[str, float | None]
+    start_spread_s: float | None
+    end_spread_s: float | None
+    duration_spread_s: float | None
+    quality: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,24 +62,99 @@ class AlignmentReport:
             "reference_modality": self.reference_modality,
             "estimates": {key: asdict(value) for key, value in self.estimates.items()},
             "offsets_s": self.offsets_s,
+            "end_offsets_s": self.end_offsets_s,
+            "durations_s": self.durations_s,
+            "start_spread_s": self.start_spread_s,
+            "end_spread_s": self.end_spread_s,
+            "duration_spread_s": self.duration_spread_s,
+            "quality": self.quality,
         }
 
 
-def _robust_onset(
+def _positive_step(time_axis_s: np.ndarray) -> float | None:
+    differences = np.diff(time_axis_s)
+    positive = differences[np.isfinite(differences) & (differences > 0)]
+    if positive.size == 0:
+        return None
+    return float(np.median(positive))
+
+
+def _bridge_short_false_gaps(mask: np.ndarray, maximum_gap: int) -> np.ndarray:
+    result = np.asarray(mask, dtype=bool).copy()
+    if maximum_gap <= 0 or result.size < 3:
+        return result
+    index = 0
+    while index < len(result):
+        if result[index]:
+            index += 1
+            continue
+        start = index
+        while index < len(result) and not result[index]:
+            index += 1
+        end = index
+        gap = end - start
+        bounded = start > 0 and end < len(result) and result[start - 1] and result[end]
+        if bounded and gap <= maximum_gap:
+            result[start:end] = True
+    return result
+
+
+def _first_true_run(mask: np.ndarray, required: int) -> int | None:
+    run = 0
+    for index, value in enumerate(mask):
+        run = run + 1 if bool(value) else 0
+        if run >= required:
+            return index - required + 1
+    return None
+
+
+def _release_index(mask: np.ndarray, onset_index: int, required_false: int) -> int | None:
+    false_run = 0
+    for index in range(onset_index, len(mask)):
+        if bool(mask[index]):
+            false_run = 0
+            continue
+        false_run += 1
+        if false_run >= required_false:
+            return index - required_false + 1
+    return None
+
+
+def _spread(values: list[float | None]) -> float | None:
+    finite = [float(value) for value in values if value is not None and np.isfinite(value)]
+    return max(finite) - min(finite) if len(finite) >= 2 else None
+
+
+def _robust_activity_interval(
     values: np.ndarray,
     *,
     time_axis_s: np.ndarray,
     baseline_fraction: float = 0.10,
     minimum_baseline_points: int = 3,
     consecutive: int = 2,
-) -> tuple[float | None, float, dict[str, Any]]:
+    release_consecutive: int = 3,
+    bridge_gap_points: int = 1,
+) -> tuple[float | None, float | None, float, dict[str, Any]]:
+    """Estimate a bounded active interval from an inspectable scalar activity trace.
+
+    The threshold is derived from the leading baseline only. That choice is
+    deliberate: several welding recordings remain active until the file ends, so a
+    trailing-baseline assumption would erase valid activity. A short false gap may
+    be bridged, while a sustained release terminates the interval. If no release is
+    observed before the final sample, the result is explicitly marked end-censored.
+    """
+
     values = np.asarray(values, dtype=np.float64)
     time_axis_s = np.asarray(time_axis_s, dtype=np.float64)
     finite = np.isfinite(values) & np.isfinite(time_axis_s)
     values = values[finite]
     time_axis_s = time_axis_s[finite]
     if len(values) < max(minimum_baseline_points + consecutive, 5):
-        return None, 0.0, {"reason": "insufficient_points"}
+        return None, None, 0.0, {"reason": "insufficient_points"}
+
+    order = np.argsort(time_axis_s, kind="stable")
+    values = values[order]
+    time_axis_s = time_axis_s[order]
 
     baseline_count = max(minimum_baseline_points, round(len(values) * baseline_fraction))
     baseline_count = min(baseline_count, max(1, len(values) - consecutive))
@@ -74,29 +165,111 @@ def _robust_onset(
     dynamic = max(upper - baseline, 0.0)
     threshold = baseline + max(6.0 * mad, 0.15 * dynamic, 1e-9)
 
-    above = values > threshold
-    onset_index: int | None = None
+    raw_active = values > threshold
+    active = _bridge_short_false_gaps(raw_active, max(0, bridge_gap_points))
     required = max(1, consecutive)
-    for index in range(0, len(above) - required + 1):
-        if bool(np.all(above[index : index + required])):
-            onset_index = index
-            break
+    onset_index = _first_true_run(active, required)
 
     peak = float(np.max(values))
-    confidence = 0.0
+    amplitude_confidence = 0.0
     if peak > baseline:
-        confidence = float(np.clip((peak - threshold) / (peak - baseline), 0.0, 1.0))
+        amplitude_confidence = float(
+            np.clip((peak - threshold) / max(peak - baseline, 1e-12), 0.0, 1.0)
+        )
+
     details: dict[str, Any] = {
         "baseline": baseline,
         "mad": mad,
         "p95": upper,
         "threshold": threshold,
         "peak": peak,
-        "baseline_points": float(baseline_count),
+        "baseline_points": baseline_count,
+        "raw_active_points": int(np.count_nonzero(raw_active)),
+        "bridged_active_points": int(np.count_nonzero(active)),
+        "bridge_gap_points": max(0, bridge_gap_points),
+        "release_consecutive": max(1, release_consecutive),
     }
     if onset_index is None:
-        return None, confidence, details
-    return float(time_axis_s[onset_index]), confidence, details
+        details["reason"] = "no_sustained_activity"
+        return None, None, amplitude_confidence, details
+
+    release = _release_index(active, onset_index, max(1, release_consecutive))
+    step = _positive_step(time_axis_s)
+    onset_s = float(time_axis_s[onset_index])
+    if release is None:
+        final_time = float(time_axis_s[-1])
+        end_s = final_time + (step or 0.0)
+        end_censored = True
+        active_end_index = len(time_axis_s) - 1
+    else:
+        end_s = float(time_axis_s[release])
+        end_censored = False
+        active_end_index = max(onset_index, release - 1)
+
+    active_count = max(active_end_index - onset_index + 1, 1)
+    interval_points = max(len(active) - onset_index, 1)
+    persistence = float(np.clip(active_count / interval_points, 0.0, 1.0))
+    confidence = float(np.sqrt(max(amplitude_confidence, 0.0) * max(persistence, 0.0)))
+    if end_censored:
+        confidence *= 0.9
+
+    details.update(
+        {
+            "onset_index": onset_index,
+            "active_end_index": active_end_index,
+            "end_censored": end_censored,
+            "median_time_step_s": step,
+            "persistence": persistence,
+        }
+    )
+    return onset_s, end_s, confidence, details
+
+
+def _robust_onset(
+    values: np.ndarray,
+    *,
+    time_axis_s: np.ndarray,
+    baseline_fraction: float = 0.10,
+    minimum_baseline_points: int = 3,
+    consecutive: int = 2,
+) -> tuple[float | None, float, dict[str, Any]]:
+    """Compatibility wrapper for callers that only need the activity start."""
+
+    onset, _end, confidence, details = _robust_activity_interval(
+        values,
+        time_axis_s=time_axis_s,
+        baseline_fraction=baseline_fraction,
+        minimum_baseline_points=minimum_baseline_points,
+        consecutive=consecutive,
+    )
+    return onset, confidence, details
+
+
+def _estimate_from_trace(
+    *,
+    modality: str,
+    method: str,
+    values: np.ndarray,
+    time_axis_s: np.ndarray,
+    details: dict[str, Any],
+) -> OnsetEstimate:
+    onset, end, confidence, interval_details = _robust_activity_interval(
+        values,
+        time_axis_s=time_axis_s,
+    )
+    interval_details.update(details)
+    duration = None
+    if onset is not None and end is not None and end >= onset:
+        duration = float(end - onset)
+    return OnsetEstimate(
+        modality=modality,
+        onset_s=onset,
+        confidence=confidence,
+        method=method,
+        details=interval_details,
+        end_s=end,
+        duration_s=duration,
+    )
 
 
 def estimate_audio_onset(
@@ -120,41 +293,35 @@ def estimate_audio_onset(
         frame_length = max(16, round(sample_rate * frame_ms / 1000.0))
         frame_count = len(mono) // frame_length
         if frame_count < 5:
-            raise ValueError("audio is too short for onset estimation")
+            raise ValueError("audio is too short for activity estimation")
         trimmed = mono[: frame_count * frame_length].reshape(frame_count, frame_length)
         rms = np.sqrt(np.mean(np.square(trimmed), axis=1))
         time_axis = np.arange(frame_count, dtype=np.float64) * frame_length / sample_rate
-        onset, confidence, details = _robust_onset(rms, time_axis_s=time_axis)
-        details.update(
-            {
+        return _estimate_from_trace(
+            modality="audio",
+            method="framed_rms_activity",
+            values=rms,
+            time_axis_s=time_axis,
+            details={
                 "sample_rate_hz": int(sample_rate),
                 "frame_ms": float(frame_length * 1000.0 / sample_rate),
                 "analyzed_seconds": float(len(mono) / sample_rate),
-            }
-        )
-        return OnsetEstimate(
-            modality="audio",
-            onset_s=onset,
-            confidence=confidence,
-            method="framed_rms_change",
-            details=details,
+            },
         )
     except Exception as exc:
         return OnsetEstimate(
             modality="audio",
             onset_s=None,
             confidence=0.0,
-            method="framed_rms_change",
+            method="framed_rms_activity",
             details={},
             error=f"{type(exc).__name__}: {exc}",
         )
 
 
-def estimate_video_onset(
-    path: Path,
-    *,
-    max_seconds: float = 15.0,
-) -> OnsetEstimate:
+def _video_activity_trace(
+    path: Path, max_seconds: float
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     capture = cv2.VideoCapture(str(path))
     try:
         if not capture.isOpened():
@@ -170,9 +337,6 @@ def estimate_video_onset(
             if not ok or frame is None:
                 break
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Arc ignition typically changes both high-end luminance and the
-            # fraction of saturated/near-saturated pixels. This bounded score is
-            # intentionally simple and inspectable rather than model-based.
             p95 = float(np.percentile(gray, 95))
             bright_fraction = float(np.mean(gray >= 200))
             scores.append(p95 + 100.0 * bright_fraction)
@@ -180,22 +344,31 @@ def estimate_video_onset(
         if len(scores) < 5:
             raise ValueError("video contains too few readable frames")
         time_axis = np.arange(len(scores), dtype=np.float64) / fps
-        onset, confidence, details = _robust_onset(
+        return (
             np.asarray(scores, dtype=np.float64),
-            time_axis_s=time_axis,
-        )
-        details.update(
+            time_axis,
             {
                 "fps": fps,
                 "frames_analyzed": len(scores),
                 "analyzed_seconds": float(len(scores) / fps),
-            }
+            },
         )
-        return OnsetEstimate(
+    finally:
+        capture.release()
+
+
+def estimate_video_onset(
+    path: Path,
+    *,
+    max_seconds: float = 15.0,
+) -> OnsetEstimate:
+    try:
+        scores, time_axis, details = _video_activity_trace(path, max_seconds)
+        return _estimate_from_trace(
             modality="video",
-            onset_s=onset,
-            confidence=confidence,
-            method="illumination_change",
+            method="illumination_activity",
+            values=scores,
+            time_axis_s=time_axis,
             details=details,
         )
     except Exception as exc:
@@ -203,12 +376,10 @@ def estimate_video_onset(
             modality="video",
             onset_s=None,
             confidence=0.0,
-            method="illumination_change",
+            method="illumination_activity",
             details={},
             error=f"{type(exc).__name__}: {exc}",
         )
-    finally:
-        capture.release()
 
 
 def _parse_sensor_datetime(values: pd.Series) -> tuple[pd.Series, str]:
@@ -218,9 +389,6 @@ def _parse_sensor_datetime(values: pd.Series) -> tuple[pd.Series, str]:
         timestamps = pd.to_datetime(values, format=date_format, errors="coerce")
         if int(timestamps.notna().sum()) >= 2:
             return timestamps, date_format
-
-    # pandas>=2 supports explicit mixed parsing. This remains a last-resort
-    # compatibility path and avoids the implicit dateutil format-inference warning.
     timestamps = pd.to_datetime(values, format="mixed", errors="coerce")
     return timestamps, "mixed"
 
@@ -254,7 +422,6 @@ def sensor_time_axis(frame: pd.DataFrame) -> tuple[np.ndarray | None, str]:
             seconds = (timestamps - first).dt.total_seconds().to_numpy(dtype=np.float64)
             return seconds, f"datetime:{date_column}+{time_column}:{parsed_format}"
 
-    # A bare clock-time column can still be normalized within one recording.
     if time_column is not None:
         deltas = pd.to_timedelta(frame[time_column].astype(str), errors="coerce")
         valid = deltas.notna()
@@ -288,34 +455,30 @@ def estimate_sensor_onset(path: Path) -> OnsetEstimate:
                 modality="sensor",
                 onset_s=None,
                 confidence=0.0,
-                method="current_voltage_change",
+                method="current_voltage_activity",
                 details={"time_axis_source": time_source, "rows": len(frame)},
                 error="No explicit sensor time axis could be resolved",
             )
         activity_column, activity = _sensor_activity_column(frame)
         if activity_column is None or activity is None:
             raise ValueError("no numeric current/voltage column found")
-        onset, confidence, details = _robust_onset(activity, time_axis_s=time_axis)
-        details.update(
-            {
+        return _estimate_from_trace(
+            modality="sensor",
+            method="current_voltage_activity",
+            values=activity,
+            time_axis_s=time_axis,
+            details={
                 "time_axis_source": time_source,
                 "activity_column": activity_column,
                 "rows": len(frame),
-            }
-        )
-        return OnsetEstimate(
-            modality="sensor",
-            onset_s=onset,
-            confidence=confidence,
-            method="current_voltage_change",
-            details=details,
+            },
         )
     except Exception as exc:
         return OnsetEstimate(
             modality="sensor",
             onset_s=None,
             confidence=0.0,
-            method="current_voltage_change",
+            method="current_voltage_activity",
             details={},
             error=f"{type(exc).__name__}: {exc}",
         )
@@ -333,49 +496,80 @@ def _primary_asset_path(sample: dict[str, Any], kind: str) -> Path | None:
     return Path(str(candidates[0]["absolute_path"])) if candidates else None
 
 
+def _missing_estimate(modality: str, method: str) -> OnsetEstimate:
+    return OnsetEstimate(modality, None, 0.0, method, {}, f"missing {modality} asset")
+
+
+def _alignment_quality(estimates: dict[str, OnsetEstimate], start_spread: float | None) -> str:
+    available = sum(estimate.onset_s is not None for estimate in estimates.values())
+    if available < 2:
+        return "insufficient"
+    if available == 2:
+        return "partial"
+    if start_spread is None:
+        return "partial"
+    if start_spread <= 0.25 and all(estimate.confidence >= 0.20 for estimate in estimates.values()):
+        return "good"
+    if start_spread <= 0.75:
+        return "warning"
+    return "poor"
+
+
 def estimate_sample_alignment(sample: dict[str, Any]) -> AlignmentReport:
-    estimates: dict[str, OnsetEstimate] = {}
     audio_path = _primary_asset_path(sample, "audio")
     video_path = _primary_asset_path(sample, "video")
     sensor_path = _primary_asset_path(sample, "sensor")
-
-    estimates["audio"] = (
-        estimate_audio_onset(audio_path)
+    estimates = {
+        "audio": estimate_audio_onset(audio_path)
         if audio_path is not None
-        else OnsetEstimate("audio", None, 0.0, "framed_rms_change", {}, "missing audio asset")
-    )
-    estimates["video"] = (
-        estimate_video_onset(video_path)
+        else _missing_estimate("audio", "framed_rms_activity"),
+        "video": estimate_video_onset(video_path)
         if video_path is not None
-        else OnsetEstimate("video", None, 0.0, "illumination_change", {}, "missing video asset")
-    )
-    estimates["sensor"] = (
-        estimate_sensor_onset(sensor_path)
+        else _missing_estimate("video", "illumination_activity"),
+        "sensor": estimate_sensor_onset(sensor_path)
         if sensor_path is not None
-        else OnsetEstimate(
-            "sensor", None, 0.0, "current_voltage_change", {}, "missing sensor asset"
-        )
-    )
+        else _missing_estimate("sensor", "current_voltage_activity"),
+    }
 
     reference: str | None = None
     for candidate in ("sensor", "audio", "video"):
         if estimates[candidate].onset_s is not None:
             reference = candidate
             break
-    reference_onset = estimates[reference].onset_s if reference is not None else None
-    offsets: dict[str, float | None] = {}
-    for modality, estimate in estimates.items():
-        if reference_onset is None or estimate.onset_s is None:
-            offsets[modality] = None
-        else:
-            offsets[modality] = float(estimate.onset_s - reference_onset)
 
+    reference_onset = estimates[reference].onset_s if reference is not None else None
+    reference_end = estimates[reference].end_s if reference is not None else None
+    offsets: dict[str, float | None] = {}
+    end_offsets: dict[str, float | None] = {}
+    durations: dict[str, float | None] = {}
+    for modality, estimate in estimates.items():
+        offsets[modality] = (
+            float(estimate.onset_s - reference_onset)
+            if reference_onset is not None and estimate.onset_s is not None
+            else None
+        )
+        end_offsets[modality] = (
+            float(estimate.end_s - reference_end)
+            if reference_end is not None and estimate.end_s is not None
+            else None
+        )
+        durations[modality] = estimate.duration_s
+
+    start_spread = _spread([estimate.onset_s for estimate in estimates.values()])
+    end_spread = _spread([estimate.end_s for estimate in estimates.values()])
+    duration_spread = _spread([estimate.duration_s for estimate in estimates.values()])
     return AlignmentReport(
         schema_version=ALIGNMENT_SCHEMA_VERSION,
         sample_id=str(sample.get("sample_id") or ""),
         reference_modality=reference,
         estimates=estimates,
         offsets_s=offsets,
+        end_offsets_s=end_offsets,
+        durations_s=durations,
+        start_spread_s=start_spread,
+        end_spread_s=end_spread,
+        duration_spread_s=duration_spread,
+        quality=_alignment_quality(estimates, start_spread),
     )
 
 
