@@ -33,12 +33,9 @@
 
 - [x] Expose background task progress/error/cancellation through FastAPI.
 - [x] Add native macOS/Windows QML lint/parser/package smoke.
-
-### Remaining service-side work that can be implemented without visual acceptance
-
-- [ ] Add a separate annotation/issue-disposition overlay database.
-- [ ] Add deterministic Good-vs-defect sample matching by process parameters.
-- [ ] Add histogram/pivot analytics service/API.
+- [x] Add a separate annotation/issue-disposition overlay database with revision history.
+- [x] Add deterministic Good-vs-defect sample matching by process parameters.
+- [x] Add histogram/distribution and pivot analytics services plus FastAPI endpoints.
 
 ### Product/UI acceptance work
 
@@ -70,8 +67,8 @@
 
 ### Infrastructure-safe core
 
-- [ ] Add a transport-agnostic dataset replay plan/service.
-- [ ] Define stable anomaly-event and operator-feedback schemas.
+- [x] Add a transport-agnostic deterministic dataset replay plan/service.
+- [x] Define stable versioned anomaly-event and operator-feedback schemas with JSON Schema export.
 
 ### Deployment/model-dependent work
 

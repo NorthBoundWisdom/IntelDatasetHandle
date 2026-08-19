@@ -39,6 +39,8 @@ jobs:
           mypy --no-site-packages --follow-imports=skip --ignore-missing-imports
           src/weld_data_workbench/alignment.py
           src/weld_data_workbench/alignment_batch.py
+          src/weld_data_workbench/analysis_services.py
+          src/weld_data_workbench/annotations.py
           src/weld_data_workbench/benchmark.py
           src/weld_data_workbench/benchmark_fixture.py
           src/weld_data_workbench/benchmark_suite.py
@@ -51,6 +53,7 @@ jobs:
           src/weld_data_workbench/prediction_contract.py
           src/weld_data_workbench/provenance.py
           src/weld_data_workbench/real_schema_fixture.py
+          src/weld_data_workbench/replay.py
           src/weld_data_workbench/runtime_tasks.py
           src/weld_data_workbench/splits.py
           src/weld_data_workbench/features/cache.py
