@@ -318,12 +318,8 @@ def create_app(workspace_or_config: Path | str) -> FastAPI:
             target_key = issue_target_key(
                 sample_id,
                 code,
-                relpath=None
-                if payload.get("relpath") is None
-                else str(payload.get("relpath")),
-                message=None
-                if payload.get("message") is None
-                else str(payload.get("message")),
+                relpath=None if payload.get("relpath") is None else str(payload.get("relpath")),
+                message=None if payload.get("message") is None else str(payload.get("message")),
             )
 
         raw_tags = payload.get("tags", [])
@@ -394,19 +390,13 @@ def create_app(workspace_or_config: Path | str) -> FastAPI:
         try:
             return analysis.pivot(
                 row=str(payload.get("row", "")),
-                column=None
-                if payload.get("column") is None
-                else str(payload.get("column")),
+                column=None if payload.get("column") is None else str(payload.get("column")),
                 measure=str(payload.get("measure", "count")),
                 value=None if payload.get("value") is None else str(payload.get("value")),
                 query=None if filters.get("q") is None else str(filters.get("q")),
-                category=None
-                if filters.get("category") is None
-                else str(filters.get("category")),
+                category=None if filters.get("category") is None else str(filters.get("category")),
                 split=None if filters.get("split") is None else str(filters.get("split")),
-                health=None
-                if filters.get("health") is None
-                else str(filters.get("health")),
+                health=None if filters.get("health") is None else str(filters.get("health")),
                 limit=int(payload.get("limit", 5000)),
             )
         except ValueError as exc:
