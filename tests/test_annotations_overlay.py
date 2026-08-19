@@ -56,9 +56,7 @@ def test_annotation_store_revision_history_and_filters(tmp_path: Path) -> None:
 
 def test_issue_target_key_and_validation(tmp_path: Path) -> None:
     key = issue_target_key("sample-1", "BAD_MEDIA", relpath="video.avi", message="decode")
-    assert key == issue_target_key(
-        "sample-1", "BAD_MEDIA", relpath="video.avi", message="decode"
-    )
+    assert key == issue_target_key("sample-1", "BAD_MEDIA", relpath="video.avi", message="decode")
     assert key != issue_target_key("sample-1", "BAD_MEDIA", relpath="audio.flac")
 
     store = AnnotationStore(tmp_path / "annotations.sqlite3")
