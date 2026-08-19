@@ -19,6 +19,9 @@ This roadmap tracks the infrastructure phase after the first successful integrat
 - Missing-modality robustness and inference telemetry are part of the unified evaluator.
 - The comprehensive benchmark suite measures repository queries, scratch full/no-op scans, preview generation/cache reuse, per-modality feature throughput/cache reuse, and in-process API throughput.
 - Public CI includes Linux Python 3.11/3.12/3.13, generated large-fixture benchmark smoke, clean-wheel smoke, and native macOS/Windows QML lint/parser/package smoke.
+- Human review state lives in a separate revisioned annotation overlay instead of mutating the canonical dataset index.
+- Deterministic Good-sample matching, histogram/distribution analytics, and bounded long-form pivot analytics are available behind service/API contracts.
+- Versioned anomaly/feedback event schemas and transport-agnostic deterministic dataset replay envelopes are defined without committing to RTSP/MQTT semantics.
 
 The high-level rule remains: **do not optimize research metrics until dataset identity, split semantics, provenance, timing semantics, and evaluation contracts are reproducible.**
 
@@ -139,12 +142,16 @@ Measurement plumbing and a nontrivial public CI fixture are complete. Real-machi
 
 ---
 
-## P1-D — QML workbench and analysis UX
+## P1-D — workbench analysis services and QML UX
 
 ### Infrastructure-safe work
 
 - [x] Move preview/feature/alignment work behind a cancellable persistent background-task API while retaining synchronous compatibility endpoints.
 - [x] Add native macOS/Windows QML lint/parser/package smoke.
+- [x] Add a separate revisioned sample/issue annotation overlay database that survives index rebuilds.
+- [x] Add deterministic Good-versus-defect matching by weld/material/process parameters.
+- [x] Add categorical/numeric distribution and bounded long-form pivot analysis services.
+- [x] Expose annotation, matching, distribution, and pivot contracts through FastAPI.
 
 ### Product/UI acceptance work
 
@@ -155,7 +162,7 @@ Measurement plumbing and a nontrivial public CI fixture are complete. Real-machi
 - [ ] Add API disconnect/reconnect and visible task/error presentation.
 - [ ] Add deeper QML interaction tests for filtering, pagination, selection, seek, media errors, and shutdown once component boundaries are stabilized.
 
-The data/service implementations for compare, analytics, and annotations can be built independently of visual acceptance; only the final QML presentation remains acceptance-sensitive.
+The data/service implementations for compare, analytics, and annotations are complete independently of visual acceptance; only the final QML presentation remains acceptance-sensitive.
 
 ---
 
@@ -210,8 +217,8 @@ Architecture/model-family choices should be driven by real-data measurements and
 
 ### Infrastructure-safe core
 
-- [ ] Add a transport-agnostic dataset replay plan/service without coupling it to the indexer.
-- [ ] Define stable anomaly-event and operator-feedback schemas.
+- [x] Add a transport-agnostic deterministic dataset replay plan/service without coupling it to the indexer.
+- [x] Define stable versioned anomaly-event and operator-feedback schemas with JSON Schema export.
 
 ### Acceptance/model-dependent work
 
@@ -222,9 +229,10 @@ Architecture/model-family choices should be driven by real-data measurements and
 
 ---
 
-## Next implementation batches
+## Remaining implementation boundaries
 
-1. Add the separate annotation/issue-disposition overlay database, deterministic Good-vs-defect matching service, analytics/pivot service, and transport-agnostic replay/event core. These do not require visual acceptance and must never mutate the raw index.
-2. Add API endpoints/tests for those service layers.
-3. Stop before choosing visual QML workflow details or model architectures; those are explicit acceptance/research decisions.
-4. Run the real 40 GB benchmark/alignment reports and use the evidence to decide any further optimization thresholds or algorithm refinements.
+1. Collect stable real-machine benchmark baselines and only then decide whether any performance threshold belongs in CI.
+2. Extend sensor timestamp parsing only when a new real encoding is observed and can be regression-tested.
+3. Keep QML interaction/layout work as explicit product acceptance work; service contracts underneath compare, analytics, annotations, background tasks, and replay are now available.
+4. Keep audio/video/image/sensor model-family selection and learned fusion as explicit research decisions backed by the real dataset.
+5. Defer RTSP/MQTT transport adapters and ONNX/OpenVINO export until a concrete deployment/model contract exists.
