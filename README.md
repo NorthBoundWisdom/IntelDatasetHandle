@@ -5,9 +5,9 @@ A local-first starter repository for the Intel Robotic Welding Multimodal Datase
 The code intentionally separates four concerns:
 
 1. **Raw dataset preservation** — the downloaded and extracted dataset remains read-only.
-2. **A reproducible workspace** — SQLite index, validation reports, previews, and feature tables are written outside the raw dataset.
+2. **A reproducible workspace** — SQLite index, validation reports, previews, feature tables, task state, and operator overlays are written outside the raw dataset.
 3. **Lazy media access** — 40 GB of media is never loaded eagerly.
-4. **Research iteration** — CLI, Python API, FastAPI service, QML desktop UI, feature extraction, and anomaly-detection baselines share one data contract.
+4. **Research iteration** — CLI, Python API, FastAPI service, QML desktop UI, feature extraction, evaluation, and analysis services share stable data contracts.
 
 > The code in this repository is MIT-licensed. The Intel dataset is not. Intel's dataset card states that the dataset is for research use and should not be used commercially. See `NOTICE_DATASET_LICENSE.md` before using the data.
 
@@ -21,12 +21,19 @@ The code intentionally separates four concerns:
 - Data integrity checks, split checks, category normalization, and JSON/CSV reports.
 - Cached video contact sheets, audio waveform/spectrogram images, sensor plots, and image thumbnails.
 - CLI and Python API.
-- FastAPI read-only service.
+- FastAPI local service with read-only canonical dataset access plus bounded derived-task orchestration and separate operator-overlay writes.
 - Native Qt QML dataset browser backed by the loopback-only FastAPI service.
+- Persistent bounded/cancellable preview, feature, and alignment tasks with backpressure and restart recovery.
 - Modality-level handcrafted feature extraction.
+- Deterministic dataset snapshots, leakage audits, session-disjoint split utilities, and benchmark/provenance tooling.
+- Common prediction artifacts, inference telemetry, missing-modality evaluation, score standardization, and late-fusion utilities.
+- Revisioned sample/issue annotation overlay stored separately from the canonical index.
+- Deterministic Good-versus-defect matching by weld/material/process parameters.
+- Histogram/distribution and bounded long-form pivot analytics services.
+- Versioned anomaly/operator-feedback event schemas and transport-agnostic deterministic dataset replay envelopes.
 - Isolation Forest baseline and late-fusion utility.
 - Synthetic mini-dataset generator for development before the 39.9 GB archive finishes downloading.
-- Tests and GitHub Actions CI.
+- Tests and GitHub Actions CI, including Linux Python 3.11–3.13 and native macOS/Windows QML parser/package smoke.
 
 ## Quick start
 
@@ -136,7 +143,11 @@ weldtool extract \
 ```text
 workspace/
 ├── workbench.yaml
-├── index.sqlite3
+├── index.sqlite3                 # canonical scan result; queried read-only after build
+├── jobs/
+│   └── tasks.sqlite3             # mutable background task state
+├── overlays/
+│   └── annotations.sqlite3       # mutable operator review/disposition state
 ├── reports/
 │   ├── validation.json
 │   ├── validation.csv
@@ -144,11 +155,12 @@ workspace/
 ├── previews/
 │   └── <sample-id>/...
 ├── features/
+│   ├── cache.sqlite3
 │   └── features.csv or features.parquet
 └── models/
 ```
 
-No generated file is written inside the raw dataset directory unless you explicitly use the same path for both locations.
+No generated file is written inside the raw dataset directory unless you explicitly use the same path for both locations. Human annotations and task state are intentionally separate from `index.sqlite3`, so an index rebuild does not rewrite operator review state.
 
 ## Main commands
 
@@ -161,29 +173,63 @@ weldtool preview        Generate cached previews for one sample
 weldtool export-index   Export indexed metadata to JSONL/CSV/Parquet
 weldtool features       Extract lightweight modality features
 weldtool baseline       Train/evaluate a tabular anomaly baseline
-weldtool serve          Start the read-only FastAPI service
+weldtool serve          Start the local FastAPI service
 weldtool gui            Start the native Qt QML browser and loopback API
 weldtool synthetic      Generate a development dataset
 weldtool archive-list   Inspect a tar archive
 weldtool extract        Safely extract a tar archive
 ```
 
-Run `weldtool <command> --help` for detailed options.
+`weldinfra` contains snapshot, split, leakage, evaluation, and infrastructure utilities. `weldbench` runs the comprehensive machine-readable benchmark suite. Run any command with `--help` for detailed options.
+
+## Local service surface
+
+In addition to dataset/sample/media reads, the loopback FastAPI service exposes bounded background tasks and analysis-oriented contracts:
+
+```text
+POST /api/tasks/previews/{sample_id}
+POST /api/tasks/alignment/{sample_id}
+POST /api/tasks/features
+GET  /api/tasks
+GET  /api/tasks/{task_id}
+POST /api/tasks/{task_id}/cancel
+
+GET  /api/samples/{sample_id}/matches/good
+GET  /api/analytics/distribution
+POST /api/analytics/pivot
+
+GET  /api/annotations
+PUT  /api/annotations
+GET  /api/annotations/{target_type}/{target_key}
+GET  /api/annotations/{target_type}/{target_key}/history
+
+POST /api/replay/plan
+GET  /api/events/schema
+```
+
+The annotation endpoints write only to the overlay database. Replay planning produces deterministic logical envelopes; it does not open RTSP/MQTT transports or claim unknown packet-level media synchronization.
 
 ## Python API
 
 ```python
 from pathlib import Path
 
+from weld_data_workbench.analysis_services import AnalysisService
+from weld_data_workbench.annotations import AnnotationStore
 from weld_data_workbench.config import load_config
 from weld_data_workbench.index.repository import DatasetRepository
 
 config = load_config(Path("~/Datasets/IntelWelding/workspace").expanduser())
 repo = DatasetRepository(config.index_path, config.dataset_root)
+analysis = AnalysisService(repo)
+annotations = AnnotationStore(config.workspace_root / "overlays" / "annotations.sqlite3")
 
 print(repo.stats())
 for sample in repo.list_samples(category="Porosity", split="test", limit=10):
     print(sample["sample_id"], sample["relpath"])
+
+# Deterministic candidates for compare-mode tooling.
+print(analysis.good_matches("some-defect-sample", limit=5))
 ```
 
 See `examples/python_api.py` and `notebooks/01_dataset_overview.ipynb`.
@@ -214,4 +260,7 @@ Start with:
 - `DevDocs/DATA_CONTRACT.md`
 - `DevDocs/DATASET_NOTES.md`
 - `DevDocs/RESEARCH_BASELINES.md`
+- `DevDocs/ANALYSIS_SERVICES.md`
+- `DevDocs/EXECUTION_EVALUATION_INFRASTRUCTURE.md`
 - `TODO.md`
+- `TODO_TEST_INFRASTRUCTURE.md`
