@@ -3,9 +3,10 @@ from __future__ import annotations
 import csv
 import json
 import math
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 TRIAGE_SCHEMA_VERSION = 1
 _MODALITIES = ("sensor", "audio", "video")
