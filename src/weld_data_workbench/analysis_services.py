@@ -216,7 +216,7 @@ class AnalysisService:
                 return {
                     "field": field,
                     "kind": "numeric",
-                    "sample_count": int(len(frame)),
+                    "sample_count": len(frame),
                     "null_count": null_count,
                     "bins": [],
                 }
@@ -227,7 +227,7 @@ class AnalysisService:
             return {
                 "field": field,
                 "kind": "numeric",
-                "sample_count": int(len(frame)),
+                "sample_count": len(frame),
                 "null_count": null_count,
                 "min": float(finite.min()),
                 "max": float(finite.max()),
@@ -252,7 +252,7 @@ class AnalysisService:
         return {
             "field": field,
             "kind": "categorical",
-            "sample_count": int(len(frame)),
+            "sample_count": len(frame),
             "items": items,
         }
 
@@ -276,9 +276,8 @@ class AnalysisService:
         measure = measure.casefold()
         if measure not in PIVOT_MEASURES:
             raise ValueError(f"Unsupported pivot measure: {measure}")
-        if measure != "count":
-            if value not in NUMERIC_FIELDS:
-                raise ValueError(f"Pivot measure {measure} requires a numeric value field")
+        if measure != "count" and value not in NUMERIC_FIELDS:
+            raise ValueError(f"Pivot measure {measure} requires a numeric value field")
 
         records = self._records(query=query, category=category, split=split, health=health)
         frame = pd.DataFrame.from_records(records)
@@ -323,6 +322,6 @@ class AnalysisService:
             "column": column,
             "measure": measure,
             "value": value,
-            "sample_count": int(len(frame)),
+            "sample_count": len(frame),
             "records": output_records,
         }
