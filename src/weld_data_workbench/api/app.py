@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -97,15 +98,22 @@ def create_app(workspace_or_config: Path | str) -> FastAPI:
     tasks.register("alignment.estimate", alignment_task)
     tasks.register("features.extract", feature_task)
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        try:
+            yield
+        finally:
+            tasks.shutdown(wait=False, cancel_futures=True)
+
     app = FastAPI(
         title="WeldDataWorkbench API",
         version="0.1.0",
         description="Read-only dataset access plus local derived-work task orchestration.",
+        lifespan=lifespan,
     )
     app.state.config = config
     app.state.repository = repository
     app.state.task_manager = tasks
-    app.add_event_handler("shutdown", lambda: tasks.shutdown(wait=False, cancel_futures=True))
 
     def submit_task(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
