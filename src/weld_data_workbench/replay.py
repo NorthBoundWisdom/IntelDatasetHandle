@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .index.repository import DatasetRepository
 
-EVENT_SCHEMA_VERSION = 1
+EVENT_SCHEMA_VERSION: Literal[1] = 1
 
 
 def utc_now() -> datetime:
