@@ -116,11 +116,22 @@ def normalize_prediction_frame(
     where larger means more anomalous. Per-modality scores, availability and
     reliability fields are optional, which allows unimodal and fusion models to use
     the same file format. Inference telemetry is also optional but standardized.
+
+    Persisted prediction artifacts require `sample_id`. For backwards-compatible
+    in-memory evaluation, a labeled frame may omit it; deterministic ephemeral row
+    identifiers are inserted so metric computation remains sample-oriented without
+    weakening the serialization boundary.
     """
 
-    if "sample_id" not in frame.columns:
-        raise ValueError("Prediction frame must contain sample_id")
     clean = frame.copy()
+    if "sample_id" not in clean.columns:
+        if not require_labels:
+            raise ValueError("Prediction frame must contain sample_id")
+        clean.insert(
+            0,
+            "sample_id",
+            [f"row-{position:08d}" for position in range(len(clean))],
+        )
     clean["sample_id"] = clean["sample_id"].astype(str)
     if clean["sample_id"].eq("").any():
         raise ValueError("sample_id cannot be empty")
