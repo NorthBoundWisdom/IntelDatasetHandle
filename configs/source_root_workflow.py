@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
-import subprocess
+import argparse
 import sys
 from pathlib import Path
 
@@ -17,50 +16,28 @@ from freecm.source_root_workflow import SourceRootWorkflowScript  # noqa: E402
 from configs.source_roots import WORKFLOW  # noqa: E402
 from configs.workbench_workflow import initialize_environment  # noqa: E402
 
-APP_CONFIG_KEYS = (
-    "WELD_QML_RUNTIME",
-    "WELD_DATASET_HOME",
-    "WELD_DATASET_ROOT",
-    "WELD_DATASET_ARCHIVE",
-    "WELD_EXTRACTED_ROOT",
-    "WELD_WORKSPACE",
-    "WELD_SCAN_WORKERS",
-)
-
 
 class WorkbenchSourceRootWorkflowScript(SourceRootWorkflowScript):
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        for action in parser._actions:
+            if "--update" in action.option_strings:
+                action.help = (
+                    "Materialize locked source roots offline; project Config and index "
+                    "refresh are separate commands."
+                )
+                break
+        return parser
+
     def _cmd_init(self, *, quiet: bool = False) -> int:
         self._print_status("environment", "preparing Python environment")
         initialize_environment()
         return super()._cmd_init(quiet=quiet)
 
 
-def update_workbench() -> int:
-    lock_data = WORKFLOW.load_lock_file(REPO_ROOT)
-    raw_configs = lock_data.get("AppConfigs")
-    if not isinstance(raw_configs, dict):
-        raise ValueError("source_roots.lock.jsonc must contain an AppConfigs object")
-
-    environment = os.environ.copy()
-    for key in APP_CONFIG_KEYS:
-        value = raw_configs.get(key)
-        if not isinstance(value, str) or not value:
-            raise ValueError(f"AppConfigs.{key} must be a non-empty string")
-        environment[key] = value
-
-    result = subprocess.run(
-        [sys.executable, "configs/workbench_workflow.py", "config"],
-        cwd=REPO_ROOT,
-        env=environment,
-        check=False,
-    )
-    return result.returncode
-
-
 SCRIPT = WorkbenchSourceRootWorkflowScript(
     WORKFLOW,
     repo_display_name="WeldDataWorkbench",
-    update_callback=update_workbench,
 )
 
 

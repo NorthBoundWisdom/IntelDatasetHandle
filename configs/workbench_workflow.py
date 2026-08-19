@@ -13,18 +13,22 @@ import hashlib
 import io
 import json
 import os
+import plistlib
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 VENV_ROOT = REPO_ROOT / ".venv"
 FREECM_BUILD_ROOT = REPO_ROOT / "build" / "freecm"
 CONFIG_RECEIPT = FREECM_BUILD_ROOT / "configured.json"
@@ -33,7 +37,8 @@ WHEEL_ROOT = FREECM_BUILD_ROOT / "wheel"
 NATIVE_LAUNCHER_SOURCE = (
     REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "native" / "qml_launcher.cpp"
 )
-NATIVE_LAUNCHER = FREECM_BUILD_ROOT / "demo_qml_launcher"
+NATIVE_APP_BUNDLE = FREECM_BUILD_ROOT / "Demo.app"
+NATIVE_LAUNCHER = NATIVE_APP_BUNDLE / "Contents" / "MacOS" / "Demo"
 ICON_SOURCE = (
     REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "qml" / "assets" / "demo_icon_source.png"
 )
@@ -43,6 +48,15 @@ ICON_ICNS = REPO_ROOT / "src" / "weld_data_workbench" / "gui" / "qml" / "assets"
 MANIFEST_SUFFIXES = {".csv", ".tsv", ".txt"}
 MANIFEST_SIGNATURE_COLUMNS = {"CATEGORY", "DIRECTORY", "SUBDIRS", "SPLIT"}
 ARCHIVE_SUFFIXES = (".tar.gz", ".tgz")
+APP_CONFIG_KEYS = (
+    "WELD_QML_RUNTIME",
+    "WELD_DATASET_HOME",
+    "WELD_DATASET_ROOT",
+    "WELD_DATASET_ARCHIVE",
+    "WELD_EXTRACTED_ROOT",
+    "WELD_WORKSPACE",
+    "WELD_SCAN_WORKERS",
+)
 
 
 class WorkflowError(RuntimeError):
@@ -177,8 +191,29 @@ def _venv_python() -> Path:
     return VENV_ROOT / "bin" / "python"
 
 
-def _path_from_env(name: str, default: Path) -> Path:
-    raw = os.environ.get(name)
+def load_app_configs() -> dict[str, str]:
+    """Load the project configuration directly from the active FreeCM lock."""
+
+    # Keep ordinary module imports/tests independent from the checked-out FreeCM
+    # submodule. The real Config action loads it only when lock access is needed.
+    from configs.source_roots import WORKFLOW
+
+    lock_data = WORKFLOW.load_lock_file(REPO_ROOT)
+    raw_configs = lock_data.get("AppConfigs")
+    if not isinstance(raw_configs, dict):
+        raise WorkflowError("source_roots.lock.jsonc must contain an AppConfigs object")
+
+    result: dict[str, str] = {}
+    for key in APP_CONFIG_KEYS:
+        value = raw_configs.get(key)
+        if not isinstance(value, str) or not value:
+            raise WorkflowError(f"AppConfigs.{key} must be a non-empty string")
+        result[key] = value
+    return result
+
+
+def _path_from_configs(configs: Mapping[str, str], name: str, default: Path) -> Path:
+    raw = configs.get(name)
     return Path(raw).expanduser().resolve() if raw else default.expanduser().resolve()
 
 
@@ -316,8 +351,9 @@ def _resolve_dataset_root(
     data_home: Path,
     extraction_root: Path,
     existing: ExistingWorkspace | None,
+    app_configs: Mapping[str, str],
 ) -> Path:
-    explicit_root = os.environ.get("WELD_DATASET_ROOT")
+    explicit_root = app_configs.get("WELD_DATASET_ROOT")
     if explicit_root:
         requested_root = Path(explicit_root).expanduser().resolve()
         discovered = discover_dataset_root(requested_root)
@@ -338,7 +374,7 @@ def _resolve_dataset_root(
     if discovered is not None:
         return discovered
 
-    explicit_archive = os.environ.get("WELD_DATASET_ARCHIVE")
+    explicit_archive = app_configs.get("WELD_DATASET_ARCHIVE")
     archive = find_dataset_archive(
         data_home,
         Path(explicit_archive) if explicit_archive else None,
@@ -355,8 +391,8 @@ def _resolve_dataset_root(
     return discovered
 
 
-def _scan_workers() -> int:
-    raw = os.environ.get("WELD_SCAN_WORKERS")
+def _scan_workers(app_configs: Mapping[str, str]) -> int:
+    raw = app_configs.get("WELD_SCAN_WORKERS")
     workers = int(raw) if raw else min(8, max(1, os.cpu_count() or 1))
     if not 1 <= workers <= 128:
         raise WorkflowError("WELD_SCAN_WORKERS must be between 1 and 128")
@@ -370,9 +406,11 @@ def _write_receipt(payload: dict[str, object]) -> None:
     temporary.replace(CONFIG_RECEIPT)
 
 
-def configure() -> None:
+def _configure_workbench(*, force_refresh_index: bool) -> None:
     CONFIG_RECEIPT.unlink(missing_ok=True)
-    explicit_qml = os.environ.get("WELD_QML_RUNTIME")
+    app_configs = load_app_configs()
+    scan_workers = _scan_workers(app_configs)
+    explicit_qml = app_configs.get("WELD_QML_RUNTIME")
     qml_runtime = find_qml_runtime(Path(explicit_qml) if explicit_qml else None)
     if qml_runtime is None:
         raise WorkflowError(
@@ -383,15 +421,28 @@ def configure() -> None:
         raise WorkflowError(f"Qt Multimedia QML module is missing: {multimedia_module}")
     python = _require_environment()
 
-    data_home = _path_from_env("WELD_DATASET_HOME", Path.home() / "Datasets" / "IntelWelding")
-    extraction_root = _path_from_env("WELD_EXTRACTED_ROOT", data_home / "extracted")
-    workspace_root = _path_from_env("WELD_WORKSPACE", data_home / "workspace")
+    data_home = _path_from_configs(
+        app_configs,
+        "WELD_DATASET_HOME",
+        Path.home() / "Datasets" / "IntelWelding",
+    )
+    extraction_root = _path_from_configs(
+        app_configs,
+        "WELD_EXTRACTED_ROOT",
+        data_home / "extracted",
+    )
+    workspace_root = _path_from_configs(
+        app_configs,
+        "WELD_WORKSPACE",
+        data_home / "workspace",
+    )
     existing = _load_existing_workspace(python, workspace_root)
     dataset_root = _resolve_dataset_root(
         python,
         data_home=data_home,
         extraction_root=extraction_root,
         existing=existing,
+        app_configs=app_configs,
     )
 
     same_config = (
@@ -414,36 +465,52 @@ def configure() -> None:
             init_args.append("--force")
         _run_command(init_args)
 
-    _run_command(
-        [
-            python,
-            "-m",
-            "weld_data_workbench",
-            "scan",
-            "--workspace",
-            workspace_root,
-            "--workers",
-            str(_scan_workers()),
-            "--probe",
-            "light",
-            "--persist-options",
-        ]
-    )
     index_path = workspace_root / "index.sqlite3"
+    refresh_required = force_refresh_index or not same_config or not index_path.is_file()
+    if refresh_required:
+        _run_command(
+            [
+                python,
+                "-m",
+                "weld_data_workbench",
+                "scan",
+                "--workspace",
+                workspace_root,
+                "--workers",
+                str(scan_workers),
+                "--probe",
+                "light",
+                "--persist-options",
+            ]
+        )
     if not index_path.is_file():
         raise WorkflowError(f"Config completed without creating the index: {index_path}")
 
     receipt = {
         "configured_at": datetime.now(UTC).isoformat(),
         "dataset_root": str(dataset_root),
+        "index_action": "refreshed" if refresh_required else "reused",
         "index_path": str(index_path),
         "python": str(python),
         "qml_runtime": str(qml_runtime),
         "qt_multimedia_module": str(multimedia_module),
+        "scan_workers": scan_workers,
         "workspace_root": str(workspace_root),
     }
     _write_receipt(receipt)
     print(json.dumps(receipt, indent=2, sort_keys=True))
+
+
+def configure() -> None:
+    """Apply active-lock settings and reuse an existing local index."""
+
+    _configure_workbench(force_refresh_index=False)
+
+
+def refresh_index() -> None:
+    """Apply active-lock settings and explicitly rebuild the incremental index."""
+
+    _configure_workbench(force_refresh_index=True)
 
 
 def _require_configuration() -> tuple[Path, Path, Path]:
@@ -478,6 +545,40 @@ def _clean_python_build_staging() -> None:
             shutil.rmtree(path)
 
 
+def prepare_native_app_bundle(app_bundle: Path, icon_source: Path = ICON_ICNS) -> Path:
+    """Create the macOS bundle metadata/resources and return its executable path."""
+
+    if not icon_source.is_file():
+        raise WorkflowError(f"Native app icon is missing: {icon_source}")
+    contents = app_bundle / "Contents"
+    executable = contents / "MacOS" / "Demo"
+    resources = contents / "Resources"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    resources.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(icon_source, resources / "Demo.icns")
+
+    metadata = {
+        "CFBundleDevelopmentRegion": "English",
+        "CFBundleDisplayName": "Demo",
+        "CFBundleExecutable": "Demo",
+        "CFBundleIconFile": "Demo.icns",
+        "CFBundleIdentifier": "com.northboundwisdom.WeldDataWorkbench",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": "Demo",
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleVersion": "1",
+        "NSHighResolutionCapable": True,
+        "NSPrincipalClass": "NSApplication",
+    }
+    info_plist = contents / "Info.plist"
+    temporary = info_plist.with_suffix(".plist.tmp")
+    with temporary.open("wb") as handle:
+        plistlib.dump(metadata, handle, sort_keys=True)
+    temporary.replace(info_plist)
+    return executable
+
+
 def build_native_launcher(qml_runtime: Path) -> Path:
     if sys.platform != "darwin":
         raise WorkflowError("The native Qt icon launcher currently requires macOS")
@@ -489,7 +590,7 @@ def build_native_launcher(qml_runtime: Path) -> Path:
     if not NATIVE_LAUNCHER_SOURCE.is_file():
         raise WorkflowError(f"Native QML launcher source is missing: {NATIVE_LAUNCHER_SOURCE}")
 
-    NATIVE_LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
+    launcher = prepare_native_app_bundle(NATIVE_APP_BUNDLE)
     command: list[str | Path] = [
         compiler,
         "-std=c++17",
@@ -517,10 +618,11 @@ def build_native_launcher(qml_runtime: Path) -> Path:
         "QtQuick",
         f"-Wl,-rpath,{qt_root / 'lib'}",
         "-o",
-        NATIVE_LAUNCHER,
+        launcher,
     ]
     _run_command(command)
-    return NATIVE_LAUNCHER
+    os.utime(NATIVE_APP_BUNDLE, None)
+    return launcher
 
 
 def build_wheel() -> None:
@@ -600,7 +702,14 @@ def run_qml(*, check: bool) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
-    subparsers.add_parser("config", help="Prepare the environment and real dataset index")
+    subparsers.add_parser(
+        "config",
+        help="Apply active-lock settings and reuse the existing dataset index",
+    )
+    subparsers.add_parser(
+        "refresh-index",
+        help="Apply active-lock settings and explicitly refresh the dataset index",
+    )
     subparsers.add_parser("build", help="Build and verify the Python wheel")
     subparsers.add_parser("test", help="Run the precommit verification suite")
     run_parser = subparsers.add_parser("run", help="Launch the QML dataset workbench")
@@ -617,6 +726,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.action == "config":
             configure()
+        elif args.action == "refresh-index":
+            refresh_index()
         elif args.action == "build":
             build_wheel()
         elif args.action == "test":

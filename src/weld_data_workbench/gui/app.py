@@ -79,7 +79,7 @@ def discover_qml_launcher(explicit: Path | None = None) -> Path | None:
     if explicit is not None:
         candidate = explicit.expanduser().resolve()
         return candidate if candidate.is_file() and os.access(candidate, os.X_OK) else None
-    candidate = Path.cwd() / "build" / "freecm" / "demo_qml_launcher"
+    candidate = Path.cwd() / "build" / "freecm" / "Demo.app" / "Contents" / "MacOS" / "Demo"
     return candidate.resolve() if candidate.is_file() and os.access(candidate, os.X_OK) else None
 
 

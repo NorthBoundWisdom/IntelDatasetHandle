@@ -5,11 +5,11 @@
       {
         "id": "local-qml-workbench",
         "label": "Local QML Workbench",
-        "description": "Apply source_roots.lock.jsonc user settings and refresh the real dataset workspace",
+        "description": "Apply source_roots.lock.jsonc user settings and reuse the real dataset index",
         "command": "python3",
         "args": [
-          "configs/source_root_workflow.py",
-          "--update"
+          "configs/workbench_workflow.py",
+          "config"
         ],
         "platforms": [
           "darwin"
@@ -26,7 +26,6 @@
             "config/default.yaml",
             "configs/freecm.commands.jsonc",
             "configs/source_roots.py",
-            "configs/source_root_workflow.py",
             "configs/workbench_workflow.py",
             "source_roots.lock.jsonc.in",
             "source_roots.lock.jsonc"

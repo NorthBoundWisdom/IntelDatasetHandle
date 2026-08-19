@@ -15,6 +15,11 @@ ApplicationWindow {
 
     property color pageColor: "#202226"
     property color panelColor: "#282b30"
+    property color listPanelColor: "#25282d"
+    property color listRowColor: "#353a42"
+    property color listRowAlternateColor: "#30353c"
+    property color listRowHoverColor: "#4c5868"
+    property color listRowSeparatorColor: "#252a31"
     property color textColor: "#f3f5f8"
     property color mutedTextColor: "#b8c0cc"
 
@@ -336,6 +341,7 @@ ApplicationWindow {
             SplitView.preferredWidth: 410
             SplitView.minimumWidth: 320
             padding: 0
+            background: Rectangle { color: window.listPanelColor }
             ColumnLayout {
                 anchors.fill: parent
                 spacing: 0
@@ -348,8 +354,10 @@ ApplicationWindow {
                     model: samplesModel
                     clip: true
                     currentIndex: -1
+                    spacing: 1
                     ScrollBar.vertical: ScrollBar {}
                     delegate: ItemDelegate {
+                        id: sampleDelegate
                         required property int index
                         required property string sampleId
                         required property string sessionId
@@ -361,7 +369,24 @@ ApplicationWindow {
                         required property int imageCount
                         width: sampleList.width
                         height: 88
+                        hoverEnabled: true
                         highlighted: ListView.isCurrentItem
+                        background: Rectangle {
+                            color: sampleDelegate.highlighted ? window.palette.highlight :
+                                   sampleDelegate.hovered ? window.listRowHoverColor :
+                                   (index % 2 === 0 ? window.listRowColor : window.listRowAlternateColor)
+                            border.color: sampleDelegate.hovered && !sampleDelegate.highlighted
+                                          ? "#86b5f2" : "transparent"
+                            border.width: sampleDelegate.hovered && !sampleDelegate.highlighted ? 1 : 0
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: window.listRowSeparatorColor
+                                visible: !sampleDelegate.highlighted && !sampleDelegate.hovered
+                            }
+                        }
                         onClicked: {
                             sampleList.currentIndex = index
                             window.selectSample(sampleId)
@@ -398,7 +423,7 @@ ApplicationWindow {
         Pane {
             SplitView.fillWidth: true
             SplitView.minimumWidth: 480
-            padding: 0
+            padding: 12
             EmptyState {
                 anchors.fill: parent
                 visible: !window.selected.sample_id
@@ -410,9 +435,19 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: Boolean(window.selected.sample_id)
                 clip: true
-                contentWidth: availableWidth
+                property int scrollbarGutter: detailVerticalScrollBar.width + 8
+                contentWidth: Math.max(0, availableWidth - scrollbarGutter)
+                ScrollBar.vertical: ScrollBar {
+                    id: detailVerticalScrollBar
+                    width: 12
+                    anchors.top: detailScroll.top
+                    anchors.right: detailScroll.right
+                    anchors.bottom: detailScroll.bottom
+                    z: 2
+                    policy: ScrollBar.AlwaysOn
+                }
                 ColumnLayout {
-                    width: detailScroll.availableWidth
+                    width: detailScroll.contentWidth
                     spacing: 14
                     Pane {
                         Layout.fillWidth: true
@@ -459,6 +494,17 @@ ApplicationWindow {
                             id: videoOutput
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: Boolean(window.selected.primary_video_url)
+                            acceptedButtons: Qt.LeftButton
+                            onDoubleClicked: {
+                                if (videoPlayer.playbackState === MediaPlayer.PlayingState)
+                                    videoPlayer.pause()
+                                else
+                                    videoPlayer.play()
+                            }
                         }
                     }
                     RowLayout {

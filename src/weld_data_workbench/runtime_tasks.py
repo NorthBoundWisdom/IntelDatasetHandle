@@ -168,7 +168,7 @@ class TaskStore:
                 """,
                 (now, now, task_id),
             )
-        return cursor.rowcount == 1
+        return int(cursor.rowcount) == 1
 
     def report_progress(
         self,

@@ -3,9 +3,12 @@
 ## Runtime model
 
 The desktop browser runs with the developer's installed Qt runtime through a
-small native launcher. The launcher calls `QGuiApplication::setWindowIcon()`
-with `demo_icon.png`, sets the application name to `Demo`, and loads QML. It
-does not import or install PySide. A short-lived Python process starts the
+small native `Demo.app` bundle. Its `Info.plist` declares `Demo` as the bundle
+executable and `Demo.icns` as `CFBundleIconFile`, so macOS associates the Dock
+process with the application icon instead of the generic Unix `exec` icon. The
+launcher also calls `QGuiApplication::setWindowIcon()`, sets the application
+name to `Demo`, and loads QML. It does not import or install PySide. A
+short-lived Python process starts the
 read-only FastAPI adapter on `127.0.0.1` using an available port, waits for
 `/api/health`, then passes the API base URL to QML through
 `Qt.application.arguments`. Closing QML terminates the API child process.
@@ -37,13 +40,22 @@ dataset. All filesystem validation stays in `DatasetRepository` and the API.
 
 1. **Init** prepares/reuses `.venv` and installs dependencies when its
    `pyproject.toml` receipt is missing or stale.
-2. **Config** runs `configs/source_root_workflow.py --update`, applies the
-   active lock's `AppConfigs`, scans the dataset, and records a local readiness
-   receipt. It never invokes pip.
-3. **Build** runs the installed `qmllint`, builds the wheel, and checks that
+2. **Source update** runs `configs/source_root_workflow.py --update` only when
+   locked source roots need offline materialization; it does not configure the
+   workbench or scan the dataset.
+3. **Config** runs `configs/workbench_workflow.py config`, reads the active
+   lock's `AppConfigs` directly, validates QML/dataset/workspace paths, reuses an
+   existing index, and records a local readiness receipt. It scans
+   only when the workspace/index is absent or the configured dataset changes.
+   It never invokes pip.
+4. **Refresh index** is the explicit
+   `configs/workbench_workflow.py refresh-index` command for raw-data or scan
+   option changes.
+5. **Build** creates `build/freecm/Demo.app` with its icon-bearing bundle
+   metadata, runs the installed `qmllint`, builds the wheel, and checks that
    `Main.qml` is packaged without stale PySide controller/model files.
-4. **Run** starts the loopback API and terminal-owned QML process.
-5. **Test** runs the repository's precommit checks.
+6. **Run** starts the loopback API and terminal-owned QML process.
+7. **Test** runs the repository's precommit checks.
 
 Config is explicit; Build, Run, and Test fail with a clear message when its
 receipt, workspace configuration, index, or QML runtime is missing.

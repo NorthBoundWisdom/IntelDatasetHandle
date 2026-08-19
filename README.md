@@ -56,13 +56,15 @@ and exposes these project buttons:
 
 - **Init** prepares/reuses `.venv`, installs dependencies only when the
   `pyproject.toml` receipt is missing or stale, and initializes FreeCM state.
-- **Config** runs the standard `source_root_workflow.py --update`, applies the
-  active lock's `AppConfigs`, refreshes the real light-probe index, and writes
-  the ignored `build/freecm/configured.json` readiness receipt. It does not run
-  pip.
-- **Build** compiles the native Qt launcher (including `setWindowIcon()`), runs
-  `qmllint`, builds a wheel, and verifies that the native QML resources are
-  packaged without the removed PySide bridge.
+- **Config** runs `workbench_workflow.py config`, reads the active lock's
+  `AppConfigs` directly, validates the local QML/dataset/workspace paths, reuses
+  an existing index, and writes the ignored `build/freecm/configured.json`
+  readiness receipt. It scans only when the workspace/index is missing or its
+  configured dataset root changed. It does not run pip.
+- **Build** compiles the native Qt launcher into
+  `build/freecm/Demo.app`, writes macOS `Info.plist`/`CFBundleIconFile`
+  metadata, runs `qmllint`, builds a wheel, and verifies that the native QML
+  resources are packaged without the removed PySide bridge.
 - **Run** starts a loopback API on an available port and launches the installed
   native `qml` executable with embedded Qt Multimedia audio/video playback;
   closing QML also stops the API process.
@@ -73,7 +75,14 @@ Initialize the checked-in FreeCM submodule, environment, and locks with:
 ```bash
 git submodule update --init --recursive FreeCM
 python3 configs/source_root_workflow.py --init  # environment install/reuse
-python3 configs/source_root_workflow.py --update
+python3 configs/source_root_workflow.py --update  # source roots only
+python3 configs/workbench_workflow.py config      # apply AppConfigs, reuse index
+```
+
+Refresh the real incremental index explicitly when raw data or scan options change:
+
+```bash
+python3 configs/workbench_workflow.py refresh-index
 ```
 
 Edit `AppConfigs` in both lock files when changing `WELD_QML_RUNTIME`,
