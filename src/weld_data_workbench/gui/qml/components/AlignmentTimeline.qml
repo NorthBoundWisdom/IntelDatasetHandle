@@ -37,6 +37,20 @@ Pane {
         return "#7d8794"
     }
 
+    function _diagnostics(estimate) {
+        let details = estimate && estimate.details ? estimate.details : ({})
+        let labels = []
+        if (details.end_censored)
+            labels.push("censored")
+        if (details.analysis_window_truncated)
+            labels.push("window-truncated")
+        if (details.time_gap_detected) {
+            let gap = Number(details.max_time_gap_s || 0)
+            labels.push("time-gap " + gap.toFixed(2) + "s")
+        }
+        return labels.join(" · ")
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 8
@@ -99,18 +113,36 @@ Pane {
                         color: row.estimate.error ? "#7d8794" : "#2b78d4"
                         opacity: 0.75
                     }
-                    Rectangle {
-                        visible: Boolean(row.estimate.details && row.estimate.details.end_censored)
+                    Row {
                         anchors.right: parent.right
-                        width: 5
-                        height: parent.height
-                        color: "#d2a33b"
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        spacing: 1
+                        Rectangle {
+                            visible: Boolean(row.estimate.details && row.estimate.details.time_gap_detected)
+                            width: visible ? 5 : 0
+                            height: parent.height
+                            color: "#c84a4a"
+                        }
+                        Rectangle {
+                            visible: Boolean(row.estimate.details && row.estimate.details.analysis_window_truncated)
+                            width: visible ? 5 : 0
+                            height: parent.height
+                            color: "#dd7b39"
+                        }
+                        Rectangle {
+                            visible: Boolean(row.estimate.details && row.estimate.details.end_censored)
+                            width: visible ? 5 : 0
+                            height: parent.height
+                            color: "#d2a33b"
+                        }
                     }
                 }
                 Label {
-                    Layout.preferredWidth: 150
+                    Layout.preferredWidth: 260
                     text: row.estimate.error ? String(row.estimate.error) :
-                          ("offset " + Number((root.alignment.offsets_s || ({}))[row.modelData] || 0).toFixed(3) + " s")
+                          ("offset " + Number((root.alignment.offsets_s || ({}))[row.modelData] || 0).toFixed(3) + " s" +
+                           (root._diagnostics(row.estimate).length ? " · " + root._diagnostics(row.estimate) : ""))
                     elide: Text.ElideRight
                     color: palette.mid
                     font.pixelSize: 11

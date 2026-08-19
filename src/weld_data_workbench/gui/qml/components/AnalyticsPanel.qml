@@ -19,6 +19,10 @@ Pane {
     readonly property var pivotDimensions: [
         "category", "split", "weld_type", "steel_type", "thickness_mm", "session_id", "health_status"
     ]
+    readonly property var numericFields: [
+        "thickness_mm", "current_a", "voltage_v", "gas_bar", "robot_speed_cpm", "total_bytes", "image_count"
+    ]
+    readonly property var pivotMeasures: ["count", "mean", "median", "sum", "min", "max"]
 
     function filterQuery() {
         let parts = []
@@ -52,7 +56,8 @@ Pane {
         let payload = {
             "row": pivotRow.currentText,
             "column": pivotColumn.currentIndex === 0 ? null : pivotColumn.currentText,
-            "measure": "count",
+            "measure": pivotMeasure.currentText,
+            "value": pivotMeasure.currentText === "count" ? null : pivotValue.currentText,
             "filters": filterPayload,
             "limit": 5000
         }
@@ -129,6 +134,13 @@ Pane {
             Layout.fillWidth: true
             ComboBox { id: pivotRow; Layout.fillWidth: true; model: root.pivotDimensions }
             ComboBox { id: pivotColumn; Layout.fillWidth: true; model: ["None"].concat(root.pivotDimensions) }
+            ComboBox { id: pivotMeasure; Layout.preferredWidth: 100; model: root.pivotMeasures }
+            ComboBox {
+                id: pivotValue
+                visible: pivotMeasure.currentText !== "count"
+                Layout.preferredWidth: visible ? 150 : 0
+                model: root.numericFields
+            }
             Button { text: "Run pivot"; onClicked: root.loadPivot() }
         }
         ListView {

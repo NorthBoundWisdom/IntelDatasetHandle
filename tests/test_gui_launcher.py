@@ -97,11 +97,14 @@ def test_native_qml_frontend_exposes_pagination_compare_analytics_and_annotation
     assert "property int pageOffset: 0" in main
     assert "property int pageLimit: 100" in main
     assert "pageSizeRequested" in pagination
-    assert "/matches/good?limit=10" in compare
+    assert "/matches/good" in compare
+    assert "same_split=" in compare
     assert "/api/analytics/distribution" in analytics
     assert "/api/analytics/pivot" in analytics
     assert "/api/annotations" in annotations
+    assert "/history?limit=20" in annotations
     assert "expected_revision" in annotations
+    assert 'pivotMeasures: ["count", "mean", "median", "sum", "min", "max"]' in analytics
 
 
 def test_native_qml_frontend_declares_multimedia_and_synchronized_timeline() -> None:
@@ -115,6 +118,17 @@ def test_native_qml_frontend_declares_multimedia_and_synchronized_timeline() -> 
     assert "alignmentOffset" in detail
     assert "seekRequested" in timeline
     assert "end_censored" in timeline
+    assert "analysis_window_truncated" in timeline
+    assert "time_gap_detected" in timeline
+
+
+def test_detail_panel_uses_repository_asset_fields_and_issue_overlay() -> None:
+    source = (COMPONENTS / "DetailPanel.qml").read_text(encoding="utf-8")
+    assert "modelData.file_url" in source
+    assert "modelData.status" in source
+    assert '"target_type": "issue"' in source
+    assert '"ignored"' in source
+    assert '"resolved"' in source
 
 
 def test_sample_delegate_retains_hover_and_alternating_rows() -> None:

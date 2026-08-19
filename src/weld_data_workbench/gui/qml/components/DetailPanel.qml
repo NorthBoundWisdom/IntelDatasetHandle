@@ -22,6 +22,25 @@ Pane {
             Qt.openUrlExternally(value)
     }
 
+    function setIssueDisposition(issue, disposition) {
+        if (!api || !sample.sample_id)
+            return
+        api.put("/api/annotations", {
+            "target_type": "issue",
+            "sample_id": String(sample.sample_id),
+            "code": String(issue.code || ""),
+            "relpath": issue.relpath === undefined ? null : issue.relpath,
+            "message": issue.message === undefined ? null : issue.message,
+            "disposition": disposition,
+            "note": "Reviewed from QML workbench",
+            "tags": []
+        }, function(result) {
+            root.statusText = "Issue " + String(issue.code || "") + " marked " + disposition
+        }, function(status, message) {
+            root.statusText = message
+        }, true)
+    }
+
     function alignmentOffset(modality) {
         if (!alignment || !alignment.offsets_s)
             return 0
@@ -325,9 +344,9 @@ Pane {
                         ColumnLayout {
                             Layout.fillWidth: true
                             Label { text: String(modelData.relpath || ""); Layout.fillWidth: true; elide: Text.ElideMiddle }
-                            Label { text: String(modelData.health_status || "") + " · " + (Number(modelData.size_bytes || 0) / 1048576).toFixed(1) + " MiB"; color: palette.mid; font.pixelSize: 11 }
+                            Label { text: String(modelData.status || "") + " · " + (Number(modelData.size_bytes || 0) / 1048576).toFixed(1) + " MiB"; color: palette.mid; font.pixelSize: 11 }
                         }
-                        Button { text: "Open"; enabled: Boolean(modelData.url); onClicked: root.openUrl(modelData.url) }
+                        Button { text: "Open"; enabled: Boolean(modelData.file_url); onClicked: root.openUrl(modelData.file_url) }
                     }
                 }
             }
@@ -341,6 +360,8 @@ Pane {
                     IssueBadge { severity: String(modelData.severity || "info") }
                     Label { text: String(modelData.code || "issue"); font.bold: true }
                     Label { text: String(modelData.message || ""); Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                    Button { text: "Ignore"; onClicked: root.setIssueDisposition(modelData, "ignored") }
+                    Button { text: "Resolve"; onClicked: root.setIssueDisposition(modelData, "resolved") }
                 }
             }
 

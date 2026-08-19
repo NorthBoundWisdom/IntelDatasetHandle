@@ -16,9 +16,9 @@ The UI never opens SQLite, scans the raw dataset, or writes raw data. Dataset fa
 - `SampleListPanel.qml` + `PaginationBar.qml` — bounded sample navigation.
 - `DetailPanel.qml` — metadata, media playback, previews, assets/issues, review composition.
 - `AlignmentTimeline.qml` — modality intervals, quality/censoring display, reference cursor seek.
-- `AnnotationPanel.qml` — sample disposition/tags/notes with optimistic revision updates.
-- `ComparePanel.qml` — deterministic matched-Good comparison by process parameters.
-- `AnalyticsPanel.qml` — categorical/numeric distributions and bounded pivot exploration.
+- `AnnotationPanel.qml` — sample disposition/tags/notes, history, and optimistic revision updates.
+- `ComparePanel.qml` — deterministic matched-Good comparison by process parameters with optional same-split restriction.
+- `AnalyticsPanel.qml` — categorical/numeric distributions and bounded count/statistical pivots.
 - `TaskPanel.qml` — recent task progress/state and cancellation.
 
 Small visual primitives (`AssetPill`, `IssueBadge`, `StatCard`, `EmptyState`) remain reusable components.
@@ -48,13 +48,15 @@ Small visual primitives (`AssetPill`, `IssueBadge`, `StatCard`, `EmptyState`) re
 ### Review
 
 - Load/save sample annotation disposition, tags, and notes from `annotations.sqlite3`.
-- Send `expected_revision` when updating an existing record so concurrent edits return a conflict rather than silently overwrite.
+- Inspect recent sample annotation revision history.
+- Mark indexed issues `ignored` or `resolved` through the separate issue overlay without changing canonical scanner facts.
+- Send `expected_revision` when updating an existing sample record so concurrent edits return a conflict rather than silently overwrite.
 
 ### Compare and analytics
 
-- Request deterministic Good candidates for a selected sample and inspect process metadata side by side.
+- Request deterministic Good candidates for a selected sample and inspect process metadata side by side, optionally restricted to the same upstream split.
 - Query supported categorical/numeric distributions.
-- Run bounded long-form pivot queries.
+- Run bounded long-form count/mean/median/sum/min/max pivot queries.
 
 ### Operations
 

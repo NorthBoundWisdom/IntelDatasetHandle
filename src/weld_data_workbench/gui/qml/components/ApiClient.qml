@@ -73,9 +73,6 @@ QtObject {
             if (!silent)
                 root.requestFailed(method, path, xhr.status, message)
         }
-        xhr.onerror = function() {
-            root._setConnected(false)
-        }
         xhr.send(body === null || body === undefined ? null : JSON.stringify(body))
     }
 

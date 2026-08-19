@@ -8,6 +8,7 @@ Pane {
     property var api
     property string sampleId: ""
     property var record: ({})
+    property var history: []
     property string statusText: ""
 
     function reset() {
@@ -15,6 +16,7 @@ Pane {
         disposition.currentIndex = disposition.model.indexOf("needs_review")
         note.text = ""
         tags.text = ""
+        history = []
         statusText = ""
     }
 
@@ -29,6 +31,19 @@ Pane {
             note.text = String(payload.note || "")
             tags.text = (payload.tags || []).join(", ")
             root.statusText = "Revision " + Number(payload.revision || 0)
+        }, function(status, message) {
+            if (status !== 404)
+                root.statusText = message
+        }, true)
+    }
+
+    function loadHistory() {
+        history = []
+        if (!api || !sampleId.length)
+            return
+        api.get("/api/annotations/sample/" + encodeURIComponent(sampleId) + "/history?limit=20", function(payload) {
+            root.history = payload || []
+            root.statusText = root.history.length + " history revisions"
         }, function(status, message) {
             if (status !== 404)
                 root.statusText = message
@@ -57,6 +72,7 @@ Pane {
         api.put("/api/annotations", payload, function(result) {
             root.record = result
             root.statusText = "Saved revision " + Number(result.revision || 0)
+            root.loadHistory()
         }, function(status, message) {
             root.statusText = status === 409 ? "Conflict: reload before saving again" : message
         }, true)
@@ -94,8 +110,26 @@ Pane {
             Layout.fillWidth: true
             Button { text: "Save"; enabled: root.sampleId.length > 0; onClicked: root.save() }
             Button { text: "Reload"; enabled: root.sampleId.length > 0; flat: true; onClicked: root.load() }
+            Button { text: "History"; enabled: root.sampleId.length > 0; flat: true; onClicked: root.loadHistory() }
             Item { Layout.fillWidth: true }
             Label { text: root.statusText; color: palette.mid; elide: Text.ElideRight }
+        }
+        ListView {
+            visible: root.history.length > 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.min(140, contentHeight) : 0
+            model: root.history
+            clip: true
+            delegate: Label {
+                required property var modelData
+                width: ListView.view.width
+                text: "r" + String(modelData.revision || "?") + " · " +
+                      String((modelData.snapshot || ({})).disposition || "") + " · " +
+                      String(modelData.recorded_at || "")
+                color: palette.mid
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
         }
     }
 }

@@ -16,7 +16,8 @@ Pane {
         comparison = ({})
         if (!api || !sample.sample_id)
             return
-        api.get("/api/samples/" + encodeURIComponent(sample.sample_id) + "/matches/good?limit=10", function(payload) {
+        let suffix = "?limit=10&same_split=" + (sameSplit.checked ? "true" : "false")
+        api.get("/api/samples/" + encodeURIComponent(sample.sample_id) + "/matches/good" + suffix, function(payload) {
             root.matches = payload || []
             root.statusText = root.matches.length + " matched Good candidates"
             if (root.matches.length)
@@ -51,6 +52,7 @@ Pane {
             Layout.fillWidth: true
             Label { text: "Matched Good comparison"; font.bold: true; font.pixelSize: 17 }
             Item { Layout.fillWidth: true }
+            CheckBox { id: sameSplit; text: "Same split"; onToggled: root.loadMatches() }
             Button { text: "Refresh matches"; enabled: Boolean(root.sample.sample_id); onClicked: root.loadMatches() }
         }
         Label { text: root.statusText; color: palette.mid }
