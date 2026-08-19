@@ -2,86 +2,80 @@
 
 ## Runtime model
 
-The desktop browser runs with the developer's installed Qt runtime through a
-small native `Demo.app` bundle. Its `Info.plist` declares `Demo` as the bundle
-executable and `Demo.icns` as `CFBundleIconFile`, so macOS associates the Dock
-process with the application icon instead of the generic Unix `exec` icon. The
-launcher also calls `QGuiApplication::setWindowIcon()`, sets the application
-name to `Demo`, and loads QML. It does not import or install PySide. A
-short-lived Python process starts the
-read-only FastAPI adapter on `127.0.0.1` using an available port, waits for
-`/api/health`, then passes the API base URL to QML through
-`Qt.application.arguments`. Closing QML terminates the API child process.
+The desktop workbench runs with the developer's installed Qt runtime through the native `Demo.app` launcher. A short-lived Python process starts the loopback-only FastAPI adapter, waits for health, and passes the selected API base URL to QML. Closing the QML process terminates the API child.
 
-FreeCM Config reads `WELD_QML_RUNTIME` and all dataset/workspace settings from
-`source_roots.lock.jsonc`. The reviewed template carries the same user settings
-in `source_roots.lock.jsonc.in`. The current Qt root is 6.11.2 and includes Qt
-Multimedia.
+The UI never opens SQLite, scans the raw dataset, or writes raw data. Dataset facts flow through `DatasetRepository` and the API; mutable operator review state flows only through the separate annotation overlay.
 
-## Current functions
+## Component structure
 
-- Load statistics and up to 1,000 filtered sample summaries from the real
-  SQLite-backed API.
-- Filter by query, category, split, and health.
-- Inspect process metadata, indexed assets, and structured issues.
-- Generate and display cached video contact sheets, image thumbnails, audio
-  plots, spectrograms, and sensor plots.
-- Play the selected AVI and FLAC directly inside QML through `MediaPlayer`,
-  `VideoOutput`, and `AudioOutput`.
-- Open original video, audio, sensor, image, and generated preview URLs with the
-  operating system.
+`Main.qml` owns application/window composition and cross-feature state. Functional behavior is split under `qml/components/`:
 
-The QML layer never opens SQLite, scans raw directories, or writes into the raw
-dataset. All filesystem validation stays in `DatasetRepository` and the API.
+- `ApiClient.qml` — JSON HTTP boundary, busy state, connectivity state, error normalization.
+- `TaskPoller.qml` — one cancellable persistent task lifecycle.
+- `FilterPanel.qml` — dataset statistics and filters.
+- `SampleListPanel.qml` + `PaginationBar.qml` — bounded sample navigation.
+- `DetailPanel.qml` — metadata, media playback, previews, assets/issues, review composition.
+- `AlignmentTimeline.qml` — modality intervals, quality/censoring display, reference cursor seek.
+- `AnnotationPanel.qml` — sample disposition/tags/notes with optimistic revision updates.
+- `ComparePanel.qml` — deterministic matched-Good comparison by process parameters.
+- `AnalyticsPanel.qml` — categorical/numeric distributions and bounded pivot exploration.
+- `TaskPanel.qml` — recent task progress/state and cancellation.
 
-## FreeCM lifecycle
+Small visual primitives (`AssetPill`, `IssueBadge`, `StatCard`, `EmptyState`) remain reusable components.
 
-`configs/freecm.commands.jsonc` declares one `local-qml-workbench` Config:
+## Current user workflows
 
-1. **Init** prepares/reuses `.venv` and installs dependencies when its
-   `pyproject.toml` receipt is missing or stale.
-2. **Source update** runs `configs/source_root_workflow.py --update` only when
-   locked source roots need offline materialization; it does not configure the
-   workbench or scan the dataset.
-3. **Config** runs `configs/workbench_workflow.py config`, reads the active
-   lock's `AppConfigs` directly, validates QML/dataset/workspace paths, reuses an
-   existing index, and records a local readiness receipt. It scans
-   only when the workspace/index is absent or the configured dataset changes.
-   It never invokes pip.
-4. **Refresh index** is the explicit
-   `configs/workbench_workflow.py refresh-index` command for raw-data or scan
-   option changes.
-5. **Build** creates `build/freecm/Demo.app` with its icon-bearing bundle
-   metadata, runs the installed `qmllint`, builds the wheel, and checks that
-   `Main.qml` is packaged without stale PySide controller/model files.
-6. **Run** starts the loopback API and terminal-owned QML process.
-7. **Test** runs the repository's precommit checks.
+### Browse
 
-Config is explicit; Build, Run, and Test fail with a clear message when its
-receipt, workspace configuration, index, or QML runtime is missing.
+- Load aggregate dataset statistics.
+- Filter by free text, category, split, and health.
+- Navigate all matching rows with offset pagination rather than a fixed 1,000-row first page.
+- Inspect full sample metadata, assets, issues, and original URLs.
+
+### Media and derived previews
+
+- Play selected AVI and FLAC through Qt Multimedia.
+- Generate preview bundles through the persistent background task API, with visible task state rather than blocking the UI request thread.
+- Display video contact sheets, image thumbnails, waveform/spectrogram, and sensor plots.
+
+### Alignment
+
+- Submit one alignment calculation through the persistent task API.
+- Display sensor/audio/video intervals, alignment quality, offsets, and end-censoring markers.
+- Seek a shared reference cursor; video/audio local seek positions are derived as `reference_time + modality_offset`.
+- The UI does not silently rewrite media timestamps or claim packet-level synchronization.
+
+### Review
+
+- Load/save sample annotation disposition, tags, and notes from `annotations.sqlite3`.
+- Send `expected_revision` when updating an existing record so concurrent edits return a conflict rather than silently overwrite.
+
+### Compare and analytics
+
+- Request deterministic Good candidates for a selected sample and inspect process metadata side by side.
+- Query supported categorical/numeric distributions.
+- Run bounded long-form pivot queries.
+
+### Operations
+
+- Show API connected/offline state and retry `/api/health` after disconnect.
+- Inspect recent background jobs and cancel queued/running tasks.
 
 ## Performance model
 
-- QML uses asynchronous `XMLHttpRequest`; the UI does not block on metadata
-  requests.
-- The list endpoint is bounded to 1,000 records per request.
-- Full sample detail is fetched only after selection.
-- Preview generation is bounded to one sample and cached in the external
-  workspace.
-- Original media remains lazy and is decoded only after the user presses Play.
+- Metadata requests are asynchronous `XMLHttpRequest` calls.
+- Sample pages are bounded; detail is fetched only after selection.
+- Original media remains lazy and decodes only when played.
+- Expensive preview/alignment work is submitted to the persistent bounded task layer.
+- Derived media remains cached in the external workspace.
 
-## Known limitations
+## Verification boundary
 
-- The current QML list has a 1,000-item page limit and no next/previous page UI.
-- Preview requests are not cancellable once submitted.
-- Audio/video playback depends on the codecs available through Qt Multimedia's
-  FFmpeg backend.
-- There is no persistent user annotation overlay.
+Public CI validates Python behavior, wheel/package contents, `qmllint`, parser/import smoke, and source-level UI contracts. Repository-only CI cannot establish:
 
-## Recommended next UI steps
+- visual correctness on the developer's displays;
+- real Intel codec/seek behavior across target machines;
+- whether reference-cursor alignment is semantically useful on difficult real samples;
+- operator ergonomics of disposition/tag vocabulary.
 
-1. Add offset pagination and retained selection across pages.
-2. Add a separate `annotations.sqlite3` so human notes never mutate the index.
-3. Add matched-sample comparison using process-parameter filters.
-4. Add synchronized video/audio/sensor playback cursors after validating codec
-   behavior across target machines.
+Those acceptance tasks are explicitly tracked in `TODO.md` and must be performed locally against the real workspace.

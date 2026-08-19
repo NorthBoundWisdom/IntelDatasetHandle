@@ -1,60 +1,66 @@
 # Roadmap
 
-## Milestone 0 — starter package
+The project has moved from infrastructure construction to product acceptance and real model research.
 
-Delivered in this package:
+## M0 — dataset truth — DONE
 
-- Workspace/config model.
-- Archive inspection and safe extraction.
-- Tolerant manifest/filesystem discovery.
-- Media probes and SQLite index.
-- Validation reports.
-- Cached previews.
-- CLI, REST API, and QML starter UI.
-- Handcrafted feature extraction.
-- Tabular anomaly baseline and late-fusion utility.
-- Synthetic dataset, tests, CI, and development docs.
+- Real archive/layout audited.
+- 4,040 samples / 236 sessions indexed.
+- Media/schema/split properties recorded.
+- Missing source images and cross-split sessions documented.
+- Generated real-shape regression fixtures exist without Intel bytes.
 
-## Milestone 1 — adapt to the real archive
+## M1 — reproducible research infrastructure — DONE
 
-Exit criteria:
+- Atomic incremental index and deterministic dataset snapshots.
+- Leakage audit, session-disjoint split artifacts, near-duplicate triage.
+- Persistent preview/feature/alignment jobs with cancellation/backpressure.
+- Benchmark suite and real-machine baseline.
+- Prediction contract, telemetry, experiment registry, evaluation, policy comparison.
+- Score standardization, fixed/reliability-aware late fusion, missing-modality evaluation.
+- Annotation overlay, matched-Good service, distribution/pivot analytics.
+- Deterministic replay/event contracts without speculative transports.
 
-- Exact archive layout documented.
-- Manifest path semantics confirmed.
-- All expected samples resolve.
-- Audio/video/sensor schemas and rates recorded.
-- Full light scan has no unexplained errors.
-- Split and session-leakage audit completed.
-- Real-schema regression tests added without real data.
+## M2 — workbench product loop — CODE COMPLETE / LOCAL ACCEPTANCE ACTIVE
 
-## Milestone 2 — reproducible dataset snapshots
+Repository-side code now includes:
 
-- Incremental scan with fingerprints.
-- Snapshot ID from manifest/index hashes.
-- Resumable preview/feature job state.
-- Deterministic environment lock.
-- Experiment configuration and result registry.
+- componentized native QML workbench;
+- offset pagination;
+- API disconnect/reconnect state;
+- task polling/cancellation for expensive preview/alignment work;
+- synchronized alignment timeline/cursor controls;
+- sample review annotations with optimistic revision handling;
+- deterministic Good-vs-defect comparison;
+- distribution and pivot exploration;
+- background task inspection/cancellation.
 
-## Milestone 3 — stronger unimodal baselines
+Remaining work is real Qt/data visual and interaction acceptance, tracked in `TODO.md`.
 
-- Audio STFT autoencoder.
-- Frozen video embeddings and reconstruction/density models.
-- Sensor temporal baseline.
-- Post-weld image anomaly baseline.
-- Unified score/evaluation schema.
+## M3 — alignment evidence review — NEXT
 
-## Milestone 4 — multimodal alignment and fusion
+- Use deterministic triage ranking on the full batch.
+- Human-review the highest-priority outliers in the workbench.
+- Label repeated failure classes before modifying algorithms.
+- Re-run and compare immutable before/after reports.
 
-- Estimate modality onset/end alignment.
-- Synchronized timeline viewer.
-- Late-fusion reproduction.
-- Learned fusion with missing-modality handling.
-- Session-grouped uncertainty estimates.
+## M4 — unimodal research — NEXT
 
-## Milestone 5 — online/edge simulation
+- Audio log-STFT anomaly baseline.
+- Sensor inspectable + temporal baseline.
+- Maintained frozen video embedding anomaly baseline.
+- Maintained frozen post-weld image embedding anomaly baseline.
+- Every model emits the common prediction contract through the model-runner boundary.
+- Session-disjoint metrics are primary; official split is compatibility-only.
 
-- Dataset replay service.
-- RTSP video and MQTT sensor adapters.
-- Online anomaly event schema.
-- Latency/throughput benchmark harness.
-- ONNX/OpenVINO export only after research correctness is stable.
+## M5 — multimodal research — PLANNED
+
+- Real unimodal/fusion ablation matrix.
+- Fixed, validation-tuned, and reliability-aware late fusion.
+- Learned fusion only after unimodal acceptance and a demonstrated need.
+
+## M6 — deployment — DEFERRED
+
+- RTSP/MQTT only from a concrete deployment contract.
+- ONNX/OpenVINO only for an accepted model with parity tests.
+- Commercial work remains blocked until licensing is resolved in writing.
