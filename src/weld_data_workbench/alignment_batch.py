@@ -13,7 +13,7 @@ from typing import Any
 import matplotlib
 import numpy as np
 
-from .alignment import AlignmentReport, estimate_sample_alignment
+from .alignment import AlignmentLimits, AlignmentReport, estimate_sample_alignment
 from .index.repository import DatasetRepository
 
 matplotlib.use("Agg")
@@ -32,6 +32,11 @@ class AlignmentBatchOptions:
     limit: int | None = None
     workers: int = 4
     batch_size: int = 200
+    audio_max_seconds: float = 60.0
+    video_max_seconds: float = 60.0
+    sensor_max_rows: int = 200_000
+    video_max_width: int = 320
+    video_analysis_fps: float = 10.0
 
     def validate(self) -> None:
         if self.limit is not None and self.limit < 1:
@@ -40,6 +45,16 @@ class AlignmentBatchOptions:
             raise ValueError("workers must be at least 1")
         if self.batch_size < 1:
             raise ValueError("batch_size must be at least 1")
+        self.alignment_limits().validate()
+
+    def alignment_limits(self) -> AlignmentLimits:
+        return AlignmentLimits(
+            audio_max_seconds=self.audio_max_seconds,
+            video_max_seconds=self.video_max_seconds,
+            sensor_max_rows=self.sensor_max_rows,
+            video_max_width=self.video_max_width,
+            video_analysis_fps=self.video_analysis_fps,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +120,11 @@ def _sample_row(metadata: dict[str, Any], report: AlignmentReport) -> dict[str, 
         row[f"{modality}_end_offset_s"] = report.end_offsets_s.get(modality)
         row[f"{modality}_error"] = estimate.error
         row[f"{modality}_end_censored"] = estimate.details.get("end_censored")
+        row[f"{modality}_analysis_window_truncated"] = estimate.details.get(
+            "analysis_window_truncated"
+        )
+        row[f"{modality}_max_time_gap_s"] = estimate.details.get("max_time_gap_s")
+        row[f"{modality}_time_gap_detected"] = estimate.details.get("time_gap_detected")
     return row
 
 
@@ -175,6 +195,13 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "duration_s": _stats([row.get(f"{modality}_duration_s") for row in rows]),
             "confidence": _stats([row.get(f"{modality}_confidence") for row in rows]),
             "end_censored": sum(bool(row.get(f"{modality}_end_censored")) for row in rows),
+            "analysis_window_truncated": sum(
+                bool(row.get(f"{modality}_analysis_window_truncated")) for row in rows
+            ),
+            "time_gap_detected": sum(
+                bool(row.get(f"{modality}_time_gap_detected")) for row in rows
+            ),
+            "max_time_gap_s": _stats([row.get(f"{modality}_max_time_gap_s") for row in rows]),
             "top_errors": [
                 {"error": error, "count": count} for error, count in errors.most_common(10)
             ],
@@ -237,6 +264,7 @@ def run_alignment_batch(
 ) -> AlignmentBatchReport:
     selected = options or AlignmentBatchOptions()
     selected.validate()
+    alignment_limits = selected.alignment_limits()
     metadata_rows = _selected_metadata(repository, selected)
     result_rows: list[dict[str, Any]] = []
 
@@ -255,7 +283,10 @@ def run_alignment_batch(
                 "batch_error": "sample disappeared during alignment batch",
             }
         try:
-            return _sample_row(metadata, estimate_sample_alignment(sample))
+            return _sample_row(
+                metadata,
+                estimate_sample_alignment(sample, limits=alignment_limits),
+            )
         except Exception as exc:
             return {
                 "sample_id": sample_id,

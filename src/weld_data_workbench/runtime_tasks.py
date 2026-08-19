@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from .sqlite_utils import closing_connection
+
 TaskState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 TaskHandler = Callable[[dict[str, Any], "TaskContext"], dict[str, Any] | None]
 
@@ -62,7 +64,7 @@ class TaskStore:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -113,7 +115,7 @@ class TaskStore:
     def create(self, kind: str, payload: dict[str, Any]) -> TaskRecord:
         now = _utcnow()
         task_id = uuid.uuid4().hex
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 INSERT INTO tasks (
@@ -128,7 +130,7 @@ class TaskStore:
         return record
 
     def get(self, task_id: str) -> TaskRecord | None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         return self._decode(row) if row is not None else None
 
@@ -149,7 +151,7 @@ class TaskStore:
             parameters.append(kind)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         parameters.append(max(1, min(limit, 5000)))
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 f"SELECT * FROM tasks{where} ORDER BY created_at DESC LIMIT ?", parameters
             ).fetchall()
@@ -157,7 +159,7 @@ class TaskStore:
 
     def mark_running(self, task_id: str) -> bool:
         now = _utcnow()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             cursor = connection.execute(
                 """
                 UPDATE tasks
@@ -179,7 +181,7 @@ class TaskStore:
         total = max(0, int(total))
         if total and current > total:
             current = total
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 UPDATE tasks
@@ -191,7 +193,7 @@ class TaskStore:
 
     def request_cancel(self, task_id: str) -> TaskRecord | None:
         now = _utcnow()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 UPDATE tasks SET cancel_requested = 1, updated_at = ?
@@ -210,7 +212,7 @@ class TaskStore:
         return self.get(task_id)
 
     def cancellation_requested(self, task_id: str) -> bool:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute(
                 "SELECT cancel_requested FROM tasks WHERE task_id = ?", (task_id,)
             ).fetchone()
@@ -218,7 +220,7 @@ class TaskStore:
 
     def finish_success(self, task_id: str, result: dict[str, Any] | None) -> None:
         now = _utcnow()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 UPDATE tasks
@@ -231,7 +233,7 @@ class TaskStore:
 
     def finish_failure(self, task_id: str, error: str) -> None:
         now = _utcnow()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 UPDATE tasks
@@ -243,7 +245,7 @@ class TaskStore:
 
     def finish_cancelled(self, task_id: str) -> None:
         now = _utcnow()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 UPDATE tasks
@@ -255,7 +257,7 @@ class TaskStore:
 
     def recover_interrupted(self) -> int:
         now = _utcnow()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             cursor = connection.execute(
                 """
                 UPDATE tasks

@@ -18,6 +18,8 @@ This roadmap tracks the infrastructure phase after the first successful integrat
 - Fixed late fusion, Good-training-only standardization, validation-only convex-weight tuning, and reliability-aware missing-modality fusion are implemented as model-independent utilities.
 - Missing-modality robustness and inference telemetry are part of the unified evaluator.
 - The comprehensive benchmark suite measures repository queries, scratch full/no-op scans, preview generation/cache reuse, per-modality feature throughput/cache reuse, and in-process API throughput.
+- A warm-up plus three stable real-machine benchmark runs are recorded in `DevDocs/REAL_DATA_BASELINE_2026-08-19.md`; thresholds remain deferred pending cross-commit evidence.
+- Full real-data alignment now distinguishes source-end censoring from bounded analysis-window truncation, reports large sensor timestamp gaps, and produces all three modality intervals for 4,040/4,040 samples.
 - Public CI includes Linux Python 3.11/3.12/3.13, generated large-fixture benchmark smoke, clean-wheel smoke, and native macOS/Windows QML lint/parser/package smoke.
 - Human review state lives in a separate revisioned annotation overlay instead of mutating the canonical dataset index.
 - Deterministic Good-sample matching, histogram/distribution analytics, and bounded long-form pivot analytics are available behind service/API contracts.
@@ -231,7 +233,7 @@ Architecture/model-family choices should be driven by real-data measurements and
 
 ## Remaining implementation boundaries
 
-1. Collect stable real-machine benchmark baselines and only then decide whether any performance threshold belongs in CI.
+1. Accumulate cross-commit real-machine benchmark history before deciding whether any performance threshold belongs in CI; the initial three-run baseline is now recorded.
 2. Extend sensor timestamp parsing only when a new real encoding is observed and can be regression-tested.
 3. Keep QML interaction/layout work as explicit product acceptance work; service contracts underneath compare, analytics, annotations, background tasks, and replay are now available.
 4. Keep audio/video/image/sensor model-family selection and learned fusion as explicit research decisions backed by the real dataset.

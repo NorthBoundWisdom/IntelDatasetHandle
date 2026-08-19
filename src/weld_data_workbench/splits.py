@@ -9,6 +9,7 @@ from typing import Any
 
 from .config import AppConfig
 from .index.database import connect_database
+from .sqlite_utils import closing_connection
 
 SPLIT_ARTIFACT_SCHEMA_VERSION = 1
 
@@ -40,7 +41,7 @@ class LeakageAudit:
 
 
 def audit_upstream_split(config: AppConfig) -> LeakageAudit:
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         rows = connection.execute(
             "SELECT session_id, split, COUNT(*) FROM samples "
             "WHERE session_id IS NOT NULL AND split IS NOT NULL "
@@ -82,7 +83,7 @@ def _validate_ratios(train: float, validation: float, test: float) -> None:
 
 
 def _session_category_counts(config: AppConfig) -> dict[str, dict[str, int]]:
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         rows = connection.execute(
             "SELECT session_id, COALESCE(category, 'Unknown'), COUNT(*) "
             "FROM samples WHERE session_id IS NOT NULL "
@@ -253,7 +254,7 @@ def grouped_kfold_assignments(
 ) -> dict[str, int]:
     if folds < 2:
         raise ValueError("folds must be at least 2")
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         sessions = [
             str(row[0])
             for row in connection.execute(
@@ -268,7 +269,7 @@ def grouped_kfold_assignments(
 def sample_assignments_from_sessions(
     config: AppConfig, session_assignments: dict[str, str | int]
 ) -> dict[str, str | int]:
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         rows = connection.execute(
             "SELECT sample_id, session_id FROM samples ORDER BY sample_id"
         ).fetchall()

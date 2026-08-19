@@ -17,6 +17,10 @@ class ValidationFinding(BaseModel):
     sample_id: str | None = None
     relpath: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+    target_key: str | None = None
+    disposition: str | None = None
+    disposition_note: str | None = None
+    active: bool = True
 
 
 class ValidationReport(BaseModel):
@@ -37,7 +41,18 @@ class ValidationReport(BaseModel):
         with path.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.DictWriter(
                 handle,
-                fieldnames=["severity", "code", "sample_id", "relpath", "message", "details_json"],
+                fieldnames=[
+                    "severity",
+                    "code",
+                    "sample_id",
+                    "relpath",
+                    "message",
+                    "details_json",
+                    "target_key",
+                    "disposition",
+                    "disposition_note",
+                    "active",
+                ],
             )
             writer.writeheader()
             for finding in self.findings:
@@ -51,6 +66,10 @@ class ValidationReport(BaseModel):
                         "details_json": json.dumps(
                             finding.details, ensure_ascii=False, default=str
                         ),
+                        "target_key": finding.target_key,
+                        "disposition": finding.disposition,
+                        "disposition_note": finding.disposition_note,
+                        "active": finding.active,
                     }
                 )
         return path

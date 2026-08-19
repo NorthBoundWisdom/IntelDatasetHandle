@@ -179,6 +179,10 @@ A practical progression is:
 
 Repository correctness tests remain the primary CI gate; benchmark thresholds are a secondary regression signal.
 
+The first three-run real-machine baseline was collected on 2026-08-19. See
+`REAL_DATA_BASELINE_2026-08-19.md` for the fixed snapshot ID, per-run values, medians,
+and coefficients of variation. It is a reference point only; no threshold was added.
+
 ## Dataset safety
 
 The benchmark suite never copies the Intel dataset into Git and never places generated derivative artifacts under the repository by default. Scratch directories contain only local indexes, previews, feature caches, and reports.

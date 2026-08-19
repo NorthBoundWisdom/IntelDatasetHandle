@@ -12,6 +12,7 @@ from .config import AppConfig
 from .index.database import connect_database
 from .index.repository import DatasetRepository
 from .io.paths import safe_join
+from .sqlite_utils import closing_connection
 
 SNAPSHOT_SCHEMA_VERSION = 1
 
@@ -76,7 +77,7 @@ def _canonical_index_digest(index_path: Path) -> str:
     """
 
     digest = hashlib.sha256()
-    with connect_database(index_path, read_only=True) as connection:
+    with closing_connection(connect_database(index_path, read_only=True)) as connection:
         sample_columns = (
             "sample_id,session_id,relpath,category_raw,category,is_good,split,"
             "weld_type,thickness_mm,steel_type,current_a,voltage_v,gas_bar,"
@@ -227,7 +228,7 @@ def build_snapshot_payload(
             archive_sha256 = sha256_file(archive)
             archive_size_bytes = archive.stat().st_size
 
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         payload: dict[str, Any] = {
             "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
             "tool_version": __version__,

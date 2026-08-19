@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from .alignment import estimate_sample_alignment, write_alignment_report
+from .alignment import AlignmentLimits, estimate_sample_alignment, write_alignment_report
 from .alignment_batch import (
     AlignmentBatchOptions,
     run_alignment_batch,
@@ -228,13 +228,35 @@ def alignment_command(
     workspace: WorkspaceOption,
     sample_id: Annotated[str, typer.Option("--sample-id")],
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    audio_max_seconds: Annotated[
+        float, typer.Option("--audio-max-seconds", min=0.1, max=3600.0)
+    ] = 60.0,
+    video_max_seconds: Annotated[
+        float, typer.Option("--video-max-seconds", min=0.1, max=3600.0)
+    ] = 60.0,
+    sensor_max_rows: Annotated[
+        int, typer.Option("--sensor-max-rows", min=5, max=2_000_000)
+    ] = 200_000,
+    video_max_width: Annotated[int, typer.Option("--video-max-width", min=32, max=4096)] = 320,
+    video_analysis_fps: Annotated[
+        float, typer.Option("--video-analysis-fps", min=0.1, max=240.0)
+    ] = 10.0,
 ) -> None:
     """Estimate audio/video/sensor active intervals and relative timing for one sample."""
     config = load_config(workspace)
     sample = DatasetRepository(config.index_path, config.dataset_root).get_sample(sample_id)
     if sample is None:
         raise typer.BadParameter(f"Unknown sample: {sample_id}")
-    report = estimate_sample_alignment(sample)
+    report = estimate_sample_alignment(
+        sample,
+        limits=AlignmentLimits(
+            audio_max_seconds=audio_max_seconds,
+            video_max_seconds=video_max_seconds,
+            sensor_max_rows=sensor_max_rows,
+            video_max_width=video_max_width,
+            video_analysis_fps=video_analysis_fps,
+        ),
+    )
     destination = output or (config.reports_dir / "alignment" / f"{safe_slug(sample_id)}.json")
     write_alignment_report(report, destination)
     payload = report.to_dict()
@@ -252,6 +274,19 @@ def alignment_batch_command(
     health: Annotated[str | None, typer.Option("--health")] = None,
     limit: Annotated[int | None, typer.Option("--limit", min=1)] = None,
     workers: Annotated[int, typer.Option("--workers", min=1, max=64)] = 4,
+    audio_max_seconds: Annotated[
+        float, typer.Option("--audio-max-seconds", min=0.1, max=3600.0)
+    ] = 60.0,
+    video_max_seconds: Annotated[
+        float, typer.Option("--video-max-seconds", min=0.1, max=3600.0)
+    ] = 60.0,
+    sensor_max_rows: Annotated[
+        int, typer.Option("--sensor-max-rows", min=5, max=2_000_000)
+    ] = 200_000,
+    video_max_width: Annotated[int, typer.Option("--video-max-width", min=32, max=4096)] = 320,
+    video_analysis_fps: Annotated[
+        float, typer.Option("--video-analysis-fps", min=0.1, max=240.0)
+    ] = 10.0,
     plots: bool = typer.Option(
         True,
         "--plots/--no-plots",
@@ -270,6 +305,11 @@ def alignment_batch_command(
             health=health,
             limit=limit,
             workers=workers,
+            audio_max_seconds=audio_max_seconds,
+            video_max_seconds=video_max_seconds,
+            sensor_max_rows=sensor_max_rows,
+            video_max_width=video_max_width,
+            video_analysis_fps=video_analysis_fps,
         ),
     )
     destination = output or (config.reports_dir / "alignment-batch.json")

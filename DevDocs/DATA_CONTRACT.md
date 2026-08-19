@@ -175,3 +175,30 @@ Aliases are normalized:
 - `testing` → `test`
 
 The workbench does not re-split samples automatically. Any new experimental split must be stored separately from the upstream annotation.
+
+## 9. Validation findings and issue dispositions
+
+Scanner issues in `index.sqlite3` remain immutable facts even when an operator has
+confirmed that a problem belongs to the upstream source dataset. Validation joins
+sample-level scanner issues to the separate annotation overlay by the stable
+`issue_target_key(sample_id, code, relpath, message)` identity.
+
+Validation JSON/CSV findings include these additive fields:
+
+| Field | Meaning |
+|---|---|
+| `target_key` | Stable annotation-overlay key for a sample issue. |
+| `disposition` | Current overlay disposition when one exists. |
+| `disposition_note` | Operator explanation copied from the current overlay record. |
+| `active` | `false` only for `ignored` or `resolved` issue dispositions. |
+
+The original `severity`, `code`, message, and details are retained when a finding is
+inactive. `validation_findings_by_severity` continues to count every recorded fact;
+`active_validation_findings_by_severity` counts only actionable findings, and
+`ValidationReport.passed` is determined by active errors. This allows confirmed
+upstream omissions to remain auditable without repeatedly failing local validation.
+
+The overlay lives at `workspace/overlays/annotations.sqlite3`, so an atomic index
+rebuild does not erase a reviewed disposition. If a scanner issue changes identity
+(for example, its path or stable message changes), it intentionally requires review
+under a new target key.

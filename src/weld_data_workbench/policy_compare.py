@@ -11,6 +11,7 @@ import pandas as pd
 from .config import AppConfig
 from .evaluation import evaluate_anomaly_predictions
 from .index.database import connect_database
+from .sqlite_utils import closing_connection
 
 POLICY_COMPARISON_SCHEMA_VERSION = 1
 
@@ -56,7 +57,7 @@ def load_predictions(path: Path) -> pd.DataFrame:
 
 
 def _repository_metadata(config: AppConfig) -> pd.DataFrame:
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         rows = connection.execute(
             """
             SELECT

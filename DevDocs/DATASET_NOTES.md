@@ -80,6 +80,16 @@ Good plus 1,610 defective; test has 121 Good plus 1,611 defective. However, 216
 session IDs occur in more than one split, so session-grouped experiments must
 treat the published split as a potential leakage source.
 
+In the local workspace reviewed on 2026-08-19, the six missing-image findings are
+marked `ignored` in the separate annotation overlay with a note that they are confirmed
+official-source omissions. The canonical index facts remain unchanged, validation
+reports them as inactive, and no replacement media was generated.
+
+A full alignment audit also found three sensor files with large Date+Time gaps. The
+parser preserves those wall-clock gaps and reports them explicitly; it does not invent
+a sampling rate or silently compress time. Aggregate results and the stable machine
+benchmark are recorded in `REAL_DATA_BASELINE_2026-08-19.md`.
+
 ## Required checks after first full scan
 
 ```bash

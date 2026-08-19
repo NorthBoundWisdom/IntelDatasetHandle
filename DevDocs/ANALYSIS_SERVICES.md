@@ -38,6 +38,12 @@ ignored
 Updates may supply `expected_revision` for optimistic concurrency. A stale revision is
 reported as a conflict instead of silently overwriting another reviewer.
 
+Dataset validation also reads existing issue annotations without modifying them.
+`ignored` and `resolved` scanner issues remain present in validation exports with their
+original severity, but are marked inactive and do not make validation fail. This is
+used for confirmed upstream source omissions where synthesizing replacement media
+would corrupt the raw-data contract.
+
 ## Good-versus-defect matching
 
 `AnalysisService.good_matches()` provides deterministic Good-sample candidates for any

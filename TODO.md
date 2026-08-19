@@ -24,7 +24,7 @@
 - [x] Add explicit sensor time normalization plus multimodal onset/active-interval/end diagnostics with batch/session reports and plots.
 - [x] Add comprehensive machine-readable benchmarking for repository reads, scratch scans, previews, features/cache reuse, and API throughput.
 - [x] Add a generated many-sample benchmark fixture to public CI.
-- [ ] Collect stable real-machine benchmark baselines before introducing performance regression thresholds.
+- [x] Collect a warm-up plus three stable real-machine benchmark baselines; keep performance regression thresholds deferred until cross-commit evidence accumulates.
 - [ ] Extend sensor timestamp parsing only when additional real encodings are observed and regression-tested.
 
 ## P1 — user interface and analysis services

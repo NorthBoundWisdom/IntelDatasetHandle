@@ -6,6 +6,7 @@ from pathlib import Path
 
 from weld_data_workbench.features.cache import FeatureJobStore
 from weld_data_workbench.features.pipeline import FeatureExtractor
+from weld_data_workbench.sqlite_utils import closing_connection
 
 
 def _reset_feature_cache(config) -> None:
@@ -103,6 +104,6 @@ def test_feature_job_store_recovers_interrupted_jobs(tmp_path: Path) -> None:
     reopened = FeatureJobStore(tmp_path / "jobs.sqlite3")
     assert reopened.result(plan).status == "pending"
 
-    with sqlite3.connect(tmp_path / "jobs.sqlite3") as connection:
+    with closing_connection(sqlite3.connect(tmp_path / "jobs.sqlite3")) as connection:
         states = dict(connection.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status"))
     assert states == {"pending": 1}

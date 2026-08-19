@@ -234,6 +234,10 @@ print(analysis.good_matches("some-defect-sample", limit=5))
 
 See `examples/python_api.py` and `notebooks/01_dataset_overview.ipynb`.
 
+The latest aggregate real-data validation, benchmark, and alignment measurements are
+recorded in `DevDocs/REAL_DATA_BASELINE_2026-08-19.md`; local machine-readable reports
+remain outside Git under the configured workspace.
+
 ## Design notes
 
 The public dataset card and paper are not completely consistent about audio sampling rate: the card currently says 16 kHz, while the paper describes the original recordings as 192 kHz. This project reads the actual FLAC metadata and does not hard-code either value.
@@ -261,6 +265,6 @@ Start with:
 - `DevDocs/DATASET_NOTES.md`
 - `DevDocs/RESEARCH_BASELINES.md`
 - `DevDocs/ANALYSIS_SERVICES.md`
-- `DevDocs/EXECUTION_EVALUATION_INFRASTRUCTURE.md`
+- `DevDocs/EXECUTION_AND_PREDICTION_INFRA.md`
 - `TODO.md`
 - `TODO_TEST_INFRASTRUCTURE.md`

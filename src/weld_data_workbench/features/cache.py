@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..sqlite_utils import closing_connection
+
 FEATURE_JOB_SCHEMA_VERSION = 1
 
 # Bump only the affected modality when its feature semantics change. The cache key
@@ -167,7 +169,7 @@ class FeatureJobStore:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS meta (
@@ -205,7 +207,7 @@ class FeatureJobStore:
     def recover_interrupted(self) -> int:
         """Convert jobs left running by a killed process back to pending."""
 
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             cursor = connection.execute(
                 """
                 UPDATE jobs
@@ -242,7 +244,7 @@ class FeatureJobStore:
             config_hash=config_hash,
         )
         now = _utc_now()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             existing = connection.execute(
                 "SELECT cache_key, status FROM jobs WHERE sample_id=? AND modality=?",
                 (sample_id, modality),
@@ -316,7 +318,7 @@ class FeatureJobStore:
         )
 
     def mark_running(self, plan: FeatureJobPlan) -> None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             cursor = connection.execute(
                 """
                 UPDATE jobs
@@ -340,7 +342,7 @@ class FeatureJobStore:
     def store_success(self, plan: FeatureJobPlan, features: dict[str, Any]) -> None:
         now = _utc_now()
         payload = _canonical_json(features)
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             cursor = connection.execute(
                 """
                 UPDATE jobs
@@ -364,7 +366,7 @@ class FeatureJobStore:
 
     def store_failure(self, plan: FeatureJobPlan, error: str) -> None:
         now = _utc_now()
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             cursor = connection.execute(
                 """
                 UPDATE jobs
@@ -387,7 +389,7 @@ class FeatureJobStore:
                 )
 
     def result(self, plan: FeatureJobPlan) -> FeatureJobResult:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute(
                 """
                 SELECT sample_id, modality, cache_key, status, attempts, feature_json, error
@@ -418,7 +420,7 @@ class FeatureJobStore:
         )
 
     def status_counts(self) -> dict[str, int]:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT status, COUNT(*) FROM jobs GROUP BY status ORDER BY status"
             ).fetchall()

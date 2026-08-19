@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 
 from ..errors import IndexNotFoundError
 from ..io.paths import safe_join
+from ..sqlite_utils import closing_connection
 from .database import connect_database
 
 
@@ -33,7 +34,7 @@ class DatasetRepository:
         return connect_database(self.index_path, read_only=True)
 
     def meta(self) -> dict[str, Any]:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute("SELECT key, value FROM meta ORDER BY key").fetchall()
         result: dict[str, Any] = {}
         for row in rows:
@@ -79,7 +80,7 @@ class DatasetRepository:
             query=query, category=category, split=split, health=health
         )
         sql = "SELECT COUNT(*) FROM samples" + where
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             return int(connection.execute(sql, params).fetchone()[0])
 
     @staticmethod
@@ -141,12 +142,12 @@ class DatasetRepository:
             LIMIT ? OFFSET ?
         """
         params.extend([max(0, min(limit, 10_000)), max(0, offset)])
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(sql, params).fetchall()
         return [self._row_dict(row) for row in rows]
 
     def get_sample(self, sample_id: str) -> dict[str, Any] | None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute(
                 "SELECT * FROM samples WHERE sample_id = ?", (sample_id,)
             ).fetchone()
@@ -208,21 +209,21 @@ class DatasetRepository:
             offset += len(batch)
 
     def categories(self) -> list[str]:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT DISTINCT category FROM samples WHERE category IS NOT NULL ORDER BY category"
             ).fetchall()
         return [str(row[0]) for row in rows]
 
     def splits(self) -> list[str]:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT DISTINCT split FROM samples WHERE split IS NOT NULL ORDER BY split"
             ).fetchall()
         return [str(row[0]) for row in rows]
 
     def stats(self) -> dict[str, Any]:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             total_samples = int(connection.execute("SELECT COUNT(*) FROM samples").fetchone()[0])
             total_sessions = int(
                 connection.execute("SELECT COUNT(DISTINCT session_id) FROM samples").fetchone()[0]
@@ -306,14 +307,14 @@ class DatasetRepository:
             params.append(code)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         params.append(min(max(limit, 0), 100_000))
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT * FROM issues" + where + " ORDER BY issue_id LIMIT ?", params
             ).fetchall()
         return [self._parse_json_fields(self._row_dict(row), ("details_json",)) for row in rows]
 
     def resolve_asset(self, sample_id: str, kind: str, ordinal: int = 0) -> Path | None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute(
                 "SELECT relpath FROM assets WHERE sample_id = ? AND kind = ? AND ordinal = ?",
                 (sample_id, kind, ordinal),

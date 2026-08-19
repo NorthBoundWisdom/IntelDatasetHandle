@@ -15,6 +15,7 @@ from PIL import Image, ImageOps
 from .config import AppConfig
 from .index.database import connect_database
 from .io.paths import safe_join
+from .sqlite_utils import closing_connection
 
 NEAR_DUPLICATE_SCHEMA_VERSION = 1
 SIGNATURE_CACHE_SCHEMA_VERSION = 1
@@ -155,7 +156,7 @@ class SignatureCache:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS meta (
@@ -190,7 +191,7 @@ class SignatureCache:
         size_bytes: int,
         mtime_ns: int,
     ) -> tuple[str, int | None, int | None, str | None] | None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute(
                 """
                 SELECT status,bits,value_hex,error,size_bytes,mtime_ns
@@ -219,7 +220,7 @@ class SignatureCache:
         bits: int,
     ) -> None:
         width = (bits + 3) // 4
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 INSERT INTO signatures(
@@ -256,7 +257,7 @@ class SignatureCache:
         mtime_ns: int,
         error: str,
     ) -> None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute(
                 """
                 INSERT INTO signatures(
@@ -338,7 +339,7 @@ def _indexed_media_rows(config: AppConfig, kinds: tuple[str, ...]) -> list[sqlit
         WHERE a.kind IN ({placeholders}) AND a.status != 'error'
         ORDER BY a.kind,a.ordinal,a.sample_id,a.relpath
     """
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         return cast(list[sqlite3.Row], connection.execute(sql, kinds).fetchall())
 
 

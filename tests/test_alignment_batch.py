@@ -128,6 +128,11 @@ def test_alignment_batch_limit_and_split_filter_are_deterministic(tmp_path: Path
         (AlignmentBatchOptions(limit=0), "limit"),
         (AlignmentBatchOptions(workers=0), "workers"),
         (AlignmentBatchOptions(batch_size=0), "batch_size"),
+        (AlignmentBatchOptions(audio_max_seconds=0), "audio_max_seconds"),
+        (AlignmentBatchOptions(video_max_seconds=0), "video_max_seconds"),
+        (AlignmentBatchOptions(sensor_max_rows=4), "sensor_max_rows"),
+        (AlignmentBatchOptions(video_max_width=31), "video_max_width"),
+        (AlignmentBatchOptions(video_analysis_fps=0), "video_analysis_fps"),
     ],
 )
 def test_alignment_batch_options_validate(options: AlignmentBatchOptions, message: str) -> None:
@@ -151,6 +156,16 @@ def test_alignment_batch_cli_writes_json_and_csv_without_plots(tmp_path: Path) -
             "2",
             "--workers",
             "2",
+            "--audio-max-seconds",
+            "2",
+            "--video-max-seconds",
+            "2",
+            "--sensor-max-rows",
+            "500",
+            "--video-max-width",
+            "160",
+            "--video-analysis-fps",
+            "5",
             "--output",
             str(output),
             "--no-plots",
@@ -162,4 +177,9 @@ def test_alignment_batch_cli_writes_json_and_csv_without_plots(tmp_path: Path) -
     assert output.with_suffix(".csv").is_file()
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["summary"]["samples"] == 2
+    assert payload["options"]["audio_max_seconds"] == 2.0
+    assert payload["options"]["video_max_seconds"] == 2.0
+    assert payload["options"]["sensor_max_rows"] == 500
+    assert payload["options"]["video_max_width"] == 160
+    assert payload["options"]["video_analysis_fps"] == 5.0
     assert '"plots": []' in result.output

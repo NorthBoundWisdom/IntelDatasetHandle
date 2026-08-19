@@ -3,12 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from ..annotations import AnnotationRecord, AnnotationStore, issue_target_key
 from ..config import AppConfig
 from ..domain.categories import CANONICAL_CATEGORIES
 from ..domain.models import Severity
 from ..index.database import connect_database
 from ..index.repository import DatasetRepository
+from ..sqlite_utils import closing_connection
 from .report import ValidationFinding, ValidationReport
+
+INACTIVE_ISSUE_DISPOSITIONS = {"ignored", "resolved"}
 
 
 def _finding(
@@ -19,6 +23,10 @@ def _finding(
     sample_id: str | None = None,
     relpath: str | None = None,
     details: dict[str, Any] | None = None,
+    target_key: str | None = None,
+    disposition: str | None = None,
+    disposition_note: str | None = None,
+    active: bool = True,
 ) -> ValidationFinding:
     return ValidationFinding(
         severity=severity,
@@ -27,7 +35,19 @@ def _finding(
         sample_id=sample_id,
         relpath=relpath,
         details=details or {},
+        target_key=target_key,
+        disposition=disposition,
+        disposition_note=disposition_note,
+        active=active,
     )
+
+
+def _issue_annotation_map(config: AppConfig) -> dict[str, AnnotationRecord]:
+    path = config.workspace_root / "overlays" / "annotations.sqlite3"
+    if not path.exists():
+        return {}
+    store = AnnotationStore(path)
+    return {record.target_key: record for record in store.list(target_type="issue", limit=100_000)}
 
 
 def run_validation(
@@ -36,17 +56,34 @@ def run_validation(
     repo = repository or DatasetRepository(config.index_path, config.dataset_root)
     stats = repo.stats()
     findings: list[ValidationFinding] = []
+    issue_annotations = _issue_annotation_map(config)
 
     # Preserve all scanner issues in the exported validation report.
     for issue in repo.issues(limit=100_000):
+        sample_id = issue.get("sample_id")
+        target_key = None
+        annotation = None
+        if sample_id:
+            target_key = issue_target_key(
+                str(sample_id),
+                str(issue["code"]),
+                relpath=issue.get("relpath"),
+                message=str(issue["message"]),
+            )
+            annotation = issue_annotations.get(target_key)
+        disposition = annotation.disposition if annotation is not None else None
         findings.append(
             _finding(
                 Severity(issue["severity"]),
                 issue["code"],
                 issue["message"],
-                sample_id=issue.get("sample_id"),
+                sample_id=sample_id,
                 relpath=issue.get("relpath"),
                 details=issue.get("details_json") or {},
+                target_key=target_key,
+                disposition=disposition,
+                disposition_note=annotation.note if annotation is not None else None,
+                active=disposition not in INACTIVE_ISSUE_DISPOSITIONS,
             )
         )
 
@@ -76,7 +113,7 @@ def run_validation(
             )
         )
 
-    with connect_database(config.index_path, read_only=True) as connection:
+    with closing_connection(connect_database(config.index_path, read_only=True)) as connection:
         if config.validation.enforce_train_good_only:
             rows = connection.execute(
                 """
@@ -189,10 +226,13 @@ def run_validation(
         )
 
     severity_counts = {severity.value: 0 for severity in Severity}
+    active_severity_counts = {severity.value: 0 for severity in Severity}
     for finding in findings:
         severity_counts[finding.severity.value] += 1
+        if finding.active:
+            active_severity_counts[finding.severity.value] += 1
 
-    passed = severity_counts[Severity.ERROR.value] == 0
+    passed = active_severity_counts[Severity.ERROR.value] == 0
     report = ValidationReport(
         generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
         index_path=str(config.index_path),
@@ -201,6 +241,8 @@ def run_validation(
         summary={
             **stats,
             "validation_findings_by_severity": severity_counts,
+            "active_validation_findings_by_severity": active_severity_counts,
+            "suppressed_validation_findings": sum(not finding.active for finding in findings),
         },
         findings=findings,
     )

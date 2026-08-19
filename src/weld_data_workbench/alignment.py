@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,11 @@ import pandas as pd
 import soundfile as sf
 
 ALIGNMENT_SCHEMA_VERSION = 2
+DEFAULT_AUDIO_MAX_SECONDS = 60.0
+DEFAULT_VIDEO_MAX_SECONDS = 60.0
+DEFAULT_SENSOR_MAX_ROWS = 200_000
+DEFAULT_VIDEO_MAX_WIDTH = 320
+DEFAULT_VIDEO_ANALYSIS_FPS = 10.0
 
 _KNOWN_SENSOR_DATETIME_FORMATS = (
     "%m-%d-%y %H:%M:%S.%f",
@@ -71,6 +77,29 @@ class AlignmentReport:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class AlignmentLimits:
+    """Explicit per-sample decode/read limits for alignment diagnostics."""
+
+    audio_max_seconds: float = DEFAULT_AUDIO_MAX_SECONDS
+    video_max_seconds: float = DEFAULT_VIDEO_MAX_SECONDS
+    sensor_max_rows: int = DEFAULT_SENSOR_MAX_ROWS
+    video_max_width: int = DEFAULT_VIDEO_MAX_WIDTH
+    video_analysis_fps: float = DEFAULT_VIDEO_ANALYSIS_FPS
+
+    def validate(self) -> None:
+        if not math.isfinite(self.audio_max_seconds) or self.audio_max_seconds <= 0:
+            raise ValueError("audio_max_seconds must be finite and positive")
+        if not math.isfinite(self.video_max_seconds) or self.video_max_seconds <= 0:
+            raise ValueError("video_max_seconds must be finite and positive")
+        if self.sensor_max_rows < 5:
+            raise ValueError("sensor_max_rows must be at least 5")
+        if self.video_max_width < 32:
+            raise ValueError("video_max_width must be at least 32")
+        if not math.isfinite(self.video_analysis_fps) or self.video_analysis_fps <= 0:
+            raise ValueError("video_analysis_fps must be finite and positive")
+
+
 def _positive_step(time_axis_s: np.ndarray) -> float | None:
     differences = np.diff(time_axis_s)
     positive = differences[np.isfinite(differences) & (differences > 0)]
@@ -108,6 +137,22 @@ def _first_true_run(mask: np.ndarray, required: int) -> int | None:
     return None
 
 
+def _sustained_true_runs(mask: np.ndarray, required: int) -> list[tuple[int, int]]:
+    """Return half-open true runs that meet the minimum support length."""
+
+    result: list[tuple[int, int]] = []
+    start: int | None = None
+    for index, value in enumerate(mask):
+        if bool(value) and start is None:
+            start = index
+        if start is not None and (not bool(value) or index == len(mask) - 1):
+            end = index if not bool(value) else index + 1
+            if end - start >= required:
+                result.append((start, end))
+            start = None
+    return result
+
+
 def _release_index(mask: np.ndarray, onset_index: int, required_false: int) -> int | None:
     false_run = 0
     for index in range(onset_index, len(mask)):
@@ -134,6 +179,8 @@ def _robust_activity_interval(
     consecutive: int = 2,
     release_consecutive: int = 3,
     bridge_gap_points: int = 1,
+    mad_multiplier: float = 3.0,
+    near_dominant_fraction: float = 0.90,
 ) -> tuple[float | None, float | None, float, dict[str, Any]]:
     """Estimate a bounded active interval from an inspectable scalar activity trace.
 
@@ -163,12 +210,12 @@ def _robust_activity_interval(
     mad = float(np.median(np.abs(baseline_values - baseline)))
     upper = float(np.percentile(values, 95))
     dynamic = max(upper - baseline, 0.0)
-    threshold = baseline + max(6.0 * mad, 0.15 * dynamic, 1e-9)
+    threshold = baseline + max(max(0.0, mad_multiplier) * mad, 0.15 * dynamic, 1e-9)
 
     raw_active = values > threshold
     active = _bridge_short_false_gaps(raw_active, max(0, bridge_gap_points))
     required = max(1, consecutive)
-    onset_index = _first_true_run(active, required)
+    sustained_runs = _sustained_true_runs(active, required)
 
     peak = float(np.max(values))
     amplitude_confidence = 0.0
@@ -188,27 +235,38 @@ def _robust_activity_interval(
         "bridged_active_points": int(np.count_nonzero(active)),
         "bridge_gap_points": max(0, bridge_gap_points),
         "release_consecutive": max(1, release_consecutive),
+        "mad_multiplier": max(0.0, mad_multiplier),
+        "sustained_run_count": len(sustained_runs),
     }
-    if onset_index is None:
+    if not sustained_runs:
         details["reason"] = "no_sustained_activity"
         return None, None, amplitude_confidence, details
 
-    release = _release_index(active, onset_index, max(1, release_consecutive))
+    # Welding traces contain short current, acoustic, and illumination dropouts.
+    # Select the dominant bridged activity run instead of ending at the first
+    # release; ties favor the earlier run deterministically.
+    longest_run_points = max(end - start for start, end in sustained_runs)
+    near_dominant_fraction = float(np.clip(near_dominant_fraction, 0.0, 1.0))
+    near_dominant_threshold = longest_run_points * near_dominant_fraction
+    near_dominant_runs = [
+        run for run in sustained_runs if run[1] - run[0] >= near_dominant_threshold
+    ]
+    onset_index, selected_end = min(near_dominant_runs, key=lambda run: run[0])
+    active_end_index = selected_end - 1
     step = _positive_step(time_axis_s)
     onset_s = float(time_axis_s[onset_index])
-    if release is None:
+    trailing_points = len(time_axis_s) - selected_end
+    if trailing_points < max(1, release_consecutive):
         final_time = float(time_axis_s[-1])
         end_s = final_time + (step or 0.0)
         end_censored = True
-        active_end_index = len(time_axis_s) - 1
     else:
-        end_s = float(time_axis_s[release])
+        end_s = float(time_axis_s[selected_end])
         end_censored = False
-        active_end_index = max(onset_index, release - 1)
 
-    active_count = max(active_end_index - onset_index + 1, 1)
-    interval_points = max(len(active) - onset_index, 1)
-    persistence = float(np.clip(active_count / interval_points, 0.0, 1.0))
+    interval_points = max(selected_end - onset_index, 1)
+    raw_active_count = int(np.count_nonzero(raw_active[onset_index:selected_end]))
+    persistence = float(np.clip(raw_active_count / interval_points, 0.0, 1.0))
     confidence = float(np.sqrt(max(amplitude_confidence, 0.0) * max(persistence, 0.0)))
     if end_censored:
         confidence *= 0.9
@@ -217,6 +275,10 @@ def _robust_activity_interval(
         {
             "onset_index": onset_index,
             "active_end_index": active_end_index,
+            "selected_run_points": interval_points,
+            "selected_raw_active_points": raw_active_count,
+            "near_dominant_fraction": near_dominant_fraction,
+            "near_dominant_run_count": len(near_dominant_runs),
             "end_censored": end_censored,
             "median_time_step_s": step,
             "persistence": persistence,
@@ -252,10 +314,18 @@ def _estimate_from_trace(
     values: np.ndarray,
     time_axis_s: np.ndarray,
     details: dict[str, Any],
+    consecutive: int = 2,
+    release_consecutive: int = 3,
+    bridge_gap_points: int = 1,
+    mad_multiplier: float = 3.0,
 ) -> OnsetEstimate:
     onset, end, confidence, interval_details = _robust_activity_interval(
         values,
         time_axis_s=time_axis_s,
+        consecutive=consecutive,
+        release_consecutive=release_consecutive,
+        bridge_gap_points=bridge_gap_points,
+        mad_multiplier=mad_multiplier,
     )
     interval_details.update(details)
     duration = None
@@ -276,9 +346,12 @@ def estimate_audio_onset(
     path: Path,
     *,
     frame_ms: float = 20.0,
-    max_seconds: float = 15.0,
+    max_seconds: float = DEFAULT_AUDIO_MAX_SECONDS,
+    bridge_gap_seconds: float = 0.5,
 ) -> OnsetEstimate:
     try:
+        if not math.isfinite(max_seconds) or max_seconds <= 0:
+            raise ValueError("max_seconds must be finite and positive")
         info = sf.info(str(path))
         frames_to_read = min(int(info.frames), int(max_seconds * info.samplerate))
         data, sample_rate = sf.read(
@@ -297,6 +370,7 @@ def estimate_audio_onset(
         trimmed = mono[: frame_count * frame_length].reshape(frame_count, frame_length)
         rms = np.sqrt(np.mean(np.square(trimmed), axis=1))
         time_axis = np.arange(frame_count, dtype=np.float64) * frame_length / sample_rate
+        actual_frame_s = float(frame_length / sample_rate)
         return _estimate_from_trace(
             modality="audio",
             method="framed_rms_activity",
@@ -306,7 +380,12 @@ def estimate_audio_onset(
                 "sample_rate_hz": int(sample_rate),
                 "frame_ms": float(frame_length * 1000.0 / sample_rate),
                 "analyzed_seconds": float(len(mono) / sample_rate),
+                "source_duration_s": float(info.frames / info.samplerate),
+                "analysis_window_truncated": frames_to_read < int(info.frames),
+                "max_seconds": float(max_seconds),
             },
+            consecutive=max(2, math.ceil(0.10 / actual_frame_s)),
+            bridge_gap_points=max(1, math.ceil(bridge_gap_seconds / actual_frame_s)),
         )
     except Exception as exc:
         return OnsetEstimate(
@@ -320,7 +399,11 @@ def estimate_audio_onset(
 
 
 def _video_activity_trace(
-    path: Path, max_seconds: float
+    path: Path,
+    max_seconds: float,
+    *,
+    max_width: int = DEFAULT_VIDEO_MAX_WIDTH,
+    max_analysis_fps: float = DEFAULT_VIDEO_ANALYSIS_FPS,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     capture = cv2.VideoCapture(str(path))
     try:
@@ -329,28 +412,61 @@ def _video_activity_trace(
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
         if fps <= 0:
             raise ValueError("video has no usable FPS")
+        source_frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        source_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        source_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
         max_frames = max(5, round(max_seconds * fps))
+        frame_stride = max(1, math.ceil(fps / max_analysis_fps))
         scores: list[float] = []
+        sample_times: list[float] = []
         frame_index = 0
         while frame_index < max_frames:
-            ok, frame = capture.read()
+            if not capture.grab():
+                break
+            if frame_index % frame_stride != 0:
+                frame_index += 1
+                continue
+            ok, frame = capture.retrieve()
             if not ok or frame is None:
                 break
+            if frame.shape[1] > max_width:
+                scale = max_width / frame.shape[1]
+                frame = cv2.resize(
+                    frame,
+                    (max_width, max(1, round(frame.shape[0] * scale))),
+                    interpolation=cv2.INTER_AREA,
+                )
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             p95 = float(np.percentile(gray, 95))
             bright_fraction = float(np.mean(gray >= 200))
             scores.append(p95 + 100.0 * bright_fraction)
+            sample_times.append(frame_index / fps)
             frame_index += 1
         if len(scores) < 5:
             raise ValueError("video contains too few readable frames")
-        time_axis = np.arange(len(scores), dtype=np.float64) / fps
+        time_axis = np.asarray(sample_times, dtype=np.float64)
+        actual_analysis_fps = fps / frame_stride
         return (
             np.asarray(scores, dtype=np.float64),
             time_axis,
             {
                 "fps": fps,
+                "analysis_fps": actual_analysis_fps,
+                "frame_stride": frame_stride,
                 "frames_analyzed": len(scores),
-                "analyzed_seconds": float(len(scores) / fps),
+                "source_frames_scanned": frame_index,
+                "analyzed_seconds": float(frame_index / fps),
+                "source_frame_count": source_frame_count or None,
+                "source_duration_s": (
+                    float(source_frame_count / fps) if source_frame_count > 0 else None
+                ),
+                "source_width": source_width or None,
+                "source_height": source_height or None,
+                "analysis_max_width": int(max_width),
+                "analysis_window_truncated": (
+                    source_frame_count > max_frames if source_frame_count > 0 else False
+                ),
+                "max_seconds": float(max_seconds),
             },
         )
     finally:
@@ -360,16 +476,35 @@ def _video_activity_trace(
 def estimate_video_onset(
     path: Path,
     *,
-    max_seconds: float = 15.0,
+    max_seconds: float = DEFAULT_VIDEO_MAX_SECONDS,
+    max_width: int = DEFAULT_VIDEO_MAX_WIDTH,
+    max_analysis_fps: float = DEFAULT_VIDEO_ANALYSIS_FPS,
+    bridge_gap_seconds: float = 0.5,
 ) -> OnsetEstimate:
     try:
-        scores, time_axis, details = _video_activity_trace(path, max_seconds)
+        if not math.isfinite(max_seconds) or max_seconds <= 0:
+            raise ValueError("max_seconds must be finite and positive")
+        if max_width < 32:
+            raise ValueError("max_width must be at least 32")
+        if not math.isfinite(max_analysis_fps) or max_analysis_fps <= 0:
+            raise ValueError("max_analysis_fps must be finite and positive")
+        scores, time_axis, details = _video_activity_trace(
+            path,
+            max_seconds,
+            max_width=max_width,
+            max_analysis_fps=max_analysis_fps,
+        )
+        step = _positive_step(time_axis)
+        if step is None:
+            raise ValueError("video analysis time axis has no positive step")
         return _estimate_from_trace(
             modality="video",
             method="illumination_activity",
             values=scores,
             time_axis_s=time_axis,
             details=details,
+            consecutive=max(2, math.ceil(0.10 / step)),
+            bridge_gap_points=max(1, math.ceil(bridge_gap_seconds / step)),
         )
     except Exception as exc:
         return OnsetEstimate(
@@ -444,9 +579,19 @@ def _sensor_activity_column(frame: pd.DataFrame) -> tuple[str | None, np.ndarray
     return None, None
 
 
-def estimate_sensor_onset(path: Path) -> OnsetEstimate:
+def estimate_sensor_onset(
+    path: Path,
+    *,
+    max_rows: int = DEFAULT_SENSOR_MAX_ROWS,
+    bridge_gap_seconds: float = 0.75,
+) -> OnsetEstimate:
     try:
-        frame = pd.read_csv(path)
+        if max_rows < 5:
+            raise ValueError("max_rows must be at least 5")
+        frame = pd.read_csv(path, nrows=max_rows + 1)
+        analysis_window_truncated = len(frame) > max_rows
+        if analysis_window_truncated:
+            frame = frame.iloc[:max_rows].copy()
         if frame.empty:
             raise ValueError("sensor CSV is empty")
         time_axis, time_source = sensor_time_axis(frame)
@@ -456,12 +601,25 @@ def estimate_sensor_onset(path: Path) -> OnsetEstimate:
                 onset_s=None,
                 confidence=0.0,
                 method="current_voltage_activity",
-                details={"time_axis_source": time_source, "rows": len(frame)},
+                details={
+                    "time_axis_source": time_source,
+                    "rows": len(frame),
+                    "max_rows": max_rows,
+                    "analysis_window_truncated": analysis_window_truncated,
+                },
                 error="No explicit sensor time axis could be resolved",
             )
         activity_column, activity = _sensor_activity_column(frame)
         if activity_column is None or activity is None:
             raise ValueError("no numeric current/voltage column found")
+        step = _positive_step(time_axis)
+        differences = np.diff(time_axis)
+        positive_differences = differences[np.isfinite(differences) & (differences > 0)]
+        maximum_step = float(np.max(positive_differences)) if positive_differences.size else None
+        time_gap_detected = bool(
+            step is not None and maximum_step is not None and maximum_step > max(1.0, 10.0 * step)
+        )
+        bridge_gap_points = max(1, math.ceil(bridge_gap_seconds / step)) if step is not None else 1
         return _estimate_from_trace(
             modality="sensor",
             method="current_voltage_activity",
@@ -471,7 +629,12 @@ def estimate_sensor_onset(path: Path) -> OnsetEstimate:
                 "time_axis_source": time_source,
                 "activity_column": activity_column,
                 "rows": len(frame),
+                "max_rows": max_rows,
+                "analysis_window_truncated": analysis_window_truncated,
+                "max_time_gap_s": maximum_step,
+                "time_gap_detected": time_gap_detected,
             },
+            bridge_gap_points=bridge_gap_points,
         )
     except Exception as exc:
         return OnsetEstimate(
@@ -515,18 +678,35 @@ def _alignment_quality(estimates: dict[str, OnsetEstimate], start_spread: float 
     return "poor"
 
 
-def estimate_sample_alignment(sample: dict[str, Any]) -> AlignmentReport:
+def estimate_sample_alignment(
+    sample: dict[str, Any],
+    *,
+    limits: AlignmentLimits | None = None,
+) -> AlignmentReport:
+    selected_limits = limits or AlignmentLimits()
+    selected_limits.validate()
     audio_path = _primary_asset_path(sample, "audio")
     video_path = _primary_asset_path(sample, "video")
     sensor_path = _primary_asset_path(sample, "sensor")
     estimates = {
-        "audio": estimate_audio_onset(audio_path)
+        "audio": estimate_audio_onset(
+            audio_path,
+            max_seconds=selected_limits.audio_max_seconds,
+        )
         if audio_path is not None
         else _missing_estimate("audio", "framed_rms_activity"),
-        "video": estimate_video_onset(video_path)
+        "video": estimate_video_onset(
+            video_path,
+            max_seconds=selected_limits.video_max_seconds,
+            max_width=selected_limits.video_max_width,
+            max_analysis_fps=selected_limits.video_analysis_fps,
+        )
         if video_path is not None
         else _missing_estimate("video", "illumination_activity"),
-        "sensor": estimate_sensor_onset(sensor_path)
+        "sensor": estimate_sensor_onset(
+            sensor_path,
+            max_rows=selected_limits.sensor_max_rows,
+        )
         if sensor_path is not None
         else _missing_estimate("sensor", "current_voltage_activity"),
     }

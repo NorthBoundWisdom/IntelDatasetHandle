@@ -19,7 +19,7 @@ This document describes alignment schema v2, active-interval estimation, batch q
 
 ### Audio
 
-Audio is decoded as floating-point samples and reduced to mono. The estimator uses framed RMS energy with a default frame length near 20 ms.
+Audio is decoded as floating-point samples and reduced to mono. The estimator uses framed RMS energy with a default frame length near 20 ms. Reads are explicitly bounded by `audio_max_seconds`, which defaults to 60 seconds and covers every audited public FLAC file.
 
 The activity threshold is based on the beginning of the recording. This works for the expected acquisition pattern where the recording starts before arc ignition. The estimator does not assume that the recording ends after the weld has ended.
 
@@ -33,11 +33,12 @@ Output details include:
 - threshold;
 - peak activity;
 - active point count;
-- end-censoring state.
+- end-censoring state;
+- source/analyzed duration and whether the analysis window was truncated.
 
 ### Video
 
-Video is decoded through OpenCV for timing diagnostics because onset/end detection needs actual pixels rather than only container metadata. Each frame is converted to grayscale and summarized by a simple illumination score combining high-end luminance and the fraction of near-saturated pixels.
+Video is decoded through OpenCV for timing diagnostics because onset/end detection needs actual pixels rather than only container metadata. Sampled frames are converted to grayscale and summarized by a simple illumination score combining high-end luminance and the fraction of near-saturated pixels. The default resource contract scans at most 60 seconds, evaluates at most 10 frames per second, and resizes analysis frames to at most 320 pixels wide while retaining source-timeline timestamps.
 
 This is intentionally an inspectable engineering baseline. It is not an arc-segmentation neural network. The score is sufficient to detect the large illumination transition present in the generated regression fixture and provides a useful starting point for real-data analysis.
 
@@ -60,6 +61,8 @@ If no explicit time information exists, alignment fails with `No explicit sensor
 
 The activity trace prefers numeric columns whose names contain `current`, then `voltage`. Absolute magnitude is used so signed representations do not change onset semantics.
 
+Sensor parsing is bounded to 200,000 rows by default. Positive timestamp steps are inspected for gaps greater than both one second and ten times the median step. Such gaps are reported as `time_gap_detected` and `max_time_gap_s`; they are never silently removed or compressed.
+
 ## Robust interval detection
 
 The shared detector operates on a scalar activity trace and a real time axis.
@@ -71,11 +74,11 @@ The threshold is derived from the leading baseline:
 - dynamic scale = difference between the global 95th percentile and baseline;
 - threshold increment = maximum of a MAD term, a fraction of dynamic range, and a small numerical floor.
 
-A start is accepted only after sustained above-threshold activity. A small false gap can be bridged to avoid ending the interval because of one noisy point. A sustained below-threshold release ends the interval.
+A start is accepted only after sustained above-threshold activity. Modality-specific short gaps are bridged in physical time. The detector selects the earlier of activity runs whose length is within 90% of the dominant run, instead of ending at the first brief release or allowing a one-point length difference to select a later duplicate segment. Confidence uses the unbridged active fraction inside the selected interval.
 
 If no release is observed before the recording ends, the estimator extends the interval by one median positive time step where such a step can be resolved and records `end_censored: true`.
 
-This distinction matters when comparing durations. A censored duration is a lower-bound observation of the active interval within the file, not proof that the physical welding process ended at the file boundary.
+This distinction matters when comparing durations. A censored duration is a lower-bound observation of the active interval within the observed window, not proof that the physical welding process ended at the file boundary. `analysis_window_truncated` separately records whether a configured resource limit ended observation before the source file ended.
 
 ## Per-sample schema v2
 
@@ -139,7 +142,7 @@ The read-only API exposes the same computation:
 GET /api/samples/{sample_id}/alignment
 ```
 
-This endpoint is intended to support the QML synchronized timeline. It performs real media decoding and should therefore be moved behind the shared cancellable background-job layer before the UI begins issuing many concurrent alignment requests.
+This endpoint is retained for synchronous compatibility. UI clients should use the persistent bounded/cancellable alignment task endpoint when issuing concurrent work.
 
 ## Batch usage
 
@@ -159,7 +162,12 @@ weldinfra alignment-batch \
   --split test \
   --category Porosity \
   --limit 500 \
-  --workers 8
+  --workers 8 \
+  --audio-max-seconds 60 \
+  --video-max-seconds 60 \
+  --video-analysis-fps 10 \
+  --video-max-width 320 \
+  --sensor-max-rows 200000
 ```
 
 The command writes:
@@ -186,6 +194,8 @@ The summary reports:
 - modality onset/interval success rates;
 - modality duration/confidence distributions;
 - end-censoring counts;
+- bounded analysis-window truncation counts;
+- detected sensor time-gap counts and distributions;
 - most frequent modality errors;
 - summaries grouped by upstream split;
 - summaries grouped by defect category;
@@ -222,7 +232,7 @@ modality onset - reference onset
 
 Therefore a positive audio offset means the detected audio event occurred later in its local recording than the reference event.
 
-The UI should also visualize the detected active interval and whether the end is censored. A censored interval should use a distinct visual treatment rather than drawing a definitive weld-stop marker.
+The UI should also visualize the detected active interval, source-end censoring, analysis-window truncation, and sensor time-gap diagnostics. These states should use distinct visual treatments rather than drawing a definitive weld-stop marker.
 
 ## Failure handling
 
@@ -246,8 +256,11 @@ Public CI uses generated data only. Tests cover:
 
 - a scalar active interval with a one-point dropout;
 - an interval that runs through recording end and must be marked censored;
+- internal dropouts and near-equal dominant runs;
 - synthetic FLAC with a known quiet-active-quiet interval;
+- bounded audio windows that end before a later event;
 - synthetic sensor CSV with a known current interval;
+- sensor row limits and explicit large timestamp-gap diagnostics;
 - generated MJPG AVI with a known bright interval;
 - audited Date+Time parsing;
 - refusal to invent sensor frequency;
@@ -259,11 +272,11 @@ Public CI uses generated data only. Tests cover:
 
 ## Next work
 
-The data-side contract is now sufficient for the next UI/infrastructure batch:
+The data-side contract and background task layer are now sufficient for product work:
 
-1. shared cancellable background jobs for previews, features, and alignment;
-2. QML master timeline and aligned media cursors;
-3. active-interval overlays and censored-end visualization;
-4. compare mode and session-level timing diagnostics in the workbench.
+1. QML master timeline and aligned media cursors;
+2. active-interval, censoring, truncation, and time-gap visualization;
+3. compare mode and session-level timing diagnostics in the workbench;
+4. explicit review of the remaining large audio/video onset outliers.
 
-Algorithm refinement should follow real 40 GB batch reports. Do not add speculative timestamp formats or complex learned alignment models until the current diagnostics reveal a concrete failure class.
+The 2026-08-19 full real-data report is summarized in `REAL_DATA_BASELINE_2026-08-19.md`. Do not add speculative timestamp formats or silently compress the three observed wall-clock gaps; future parser changes still require a new real encoding and a regression fixture.

@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .sqlite_utils import closing_connection
+
 VALID_TARGET_TYPES = {"sample", "issue"}
 VALID_DISPOSITIONS = {
     "open",
@@ -79,7 +81,7 @@ class AnnotationStore:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(
                 """
@@ -143,7 +145,7 @@ class AnnotationStore:
             raise ValueError(f"Unsupported annotation disposition: {disposition}")
 
     def get(self, target_type: str, target_key: str) -> AnnotationRecord | None:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             row = connection.execute(
                 """
                 SELECT * FROM annotations
@@ -178,7 +180,7 @@ class AnnotationStore:
             params.append(disposition)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         params.append(min(max(int(limit), 1), 100_000))
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 """
                 SELECT * FROM annotations
@@ -213,7 +215,7 @@ class AnnotationStore:
         normalized_tags = sorted({str(value).strip() for value in tags if str(value).strip()})
         now = utc_now_iso()
 
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 current = connection.execute(
@@ -305,7 +307,7 @@ class AnnotationStore:
         *,
         limit: int = 1000,
     ) -> builtins.list[dict[str, Any]]:
-        with self._connect() as connection:
+        with closing_connection(self._connect()) as connection:
             rows = connection.execute(
                 """
                 SELECT history_id, target_type, target_key, sample_id,

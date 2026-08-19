@@ -176,11 +176,16 @@ def validate_command(
     """Run dataset-level integrity and split checks."""
     config = _config(workspace)
     report = run_validation(config)
-    severity = report.summary["validation_findings_by_severity"]
+    severity = report.summary.get(
+        "active_validation_findings_by_severity",
+        report.summary["validation_findings_by_severity"],
+    )
+    suppressed = int(report.summary.get("suppressed_validation_findings", 0))
     style = "green" if report.passed else "red"
     console.print(
         f"[{style}]Validation {'passed' if report.passed else 'failed'}[/{style}] — "
-        f"{severity['error']} errors, {severity['warning']} warnings, {severity['info']} info"
+        f"{severity['error']} active errors, {severity['warning']} active warnings, "
+        f"{severity['info']} active info; {suppressed} resolved/ignored"
     )
     console.print(f"JSON: {config.reports_dir / 'validation.json'}")
     console.print(f"CSV:  {config.reports_dir / 'validation.csv'}")
@@ -190,12 +195,14 @@ def validate_command(
         table.add_column("Severity")
         table.add_column("Code")
         table.add_column("Sample")
+        table.add_column("State")
         table.add_column("Message")
         for finding in report.findings[:show]:
             table.add_row(
                 finding.severity.value,
                 finding.code,
                 finding.sample_id or "—",
+                "active" if finding.active else (finding.disposition or "inactive"),
                 finding.message,
             )
         console.print(table)
