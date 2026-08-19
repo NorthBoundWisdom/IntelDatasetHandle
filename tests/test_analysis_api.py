@@ -78,10 +78,7 @@ def test_analysis_annotation_and_replay_api(indexed_workspace) -> None:
 def test_analysis_api_validation(indexed_workspace) -> None:
     config, _summary = indexed_workspace
     with TestClient(create_app(config.workspace_root)) as client:
-        assert (
-            client.get("/api/analytics/distribution", params={"field": "bad"}).status_code
-            == 400
-        )
+        assert client.get("/api/analytics/distribution", params={"field": "bad"}).status_code == 400
         assert (
             client.post(
                 "/api/analytics/pivot",
