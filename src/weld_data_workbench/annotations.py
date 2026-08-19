@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -195,7 +197,7 @@ class AnnotationStore:
         sample_id: str,
         disposition: str,
         note: str = "",
-        tags: list[str] | tuple[str, ...] = (),
+        tags: Sequence[str] = (),
         updated_by: str | None = None,
         expected_revision: int | None = None,
     ) -> AnnotationRecord:
@@ -302,7 +304,7 @@ class AnnotationStore:
         target_key: str,
         *,
         limit: int = 1000,
-    ) -> list[dict[str, Any]]:
+    ) -> builtins.list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
