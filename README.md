@@ -74,7 +74,8 @@ Initialize the checked-in FreeCM submodule, environment, and locks with:
 
 ```bash
 git submodule update --init --recursive FreeCM
-python3 configs/source_root_workflow.py --init  # environment install/reuse
+python3 configs/source_root_workflow.py --initlock  # create/reuse the active lock offline
+python3 configs/source_root_workflow.py --initrepo  # environment install/reuse
 python3 configs/source_root_workflow.py --update  # source roots only
 python3 configs/workbench_workflow.py config      # apply AppConfigs, reuse index
 ```
@@ -89,7 +90,8 @@ Edit `AppConfigs` in both lock files when changing `WELD_QML_RUNTIME`,
 `WELD_DATASET_HOME`, `WELD_DATASET_ROOT`, `WELD_DATASET_ARCHIVE`,
 `WELD_EXTRACTED_ROOT`, `WELD_WORKSPACE`, or `WELD_SCAN_WORKERS`. The reviewed
 `.in` template is tracked; the active `.json` lock is machine-local and ignored,
-and `--init` creates it from the template when absent.
+and `--initlock` creates it from the template when absent. `--initrepo` requires
+the active lock and is the only network-enabled initialization step.
 
 Generate a small synthetic dataset and exercise the complete local workflow:
 

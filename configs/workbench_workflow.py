@@ -310,13 +310,13 @@ def _require_environment() -> Path:
     python = _venv_python()
     if not _environment_marker_is_current(python):
         raise WorkflowError(
-            "Environment is not initialized; run `python3 configs/source_root_workflow.py --init`"
+            "Environment is not initialized; run `python3 configs/source_root_workflow.py --initrepo`"
         )
     return python
 
 
 def initialize_environment() -> Path:
-    """Install/update the project environment; intended for FreeCM --init."""
+    """Install/update the project environment; intended for FreeCM --initrepo."""
     python = _ensure_environment()
     print(f"Environment ready: {python}")
     return python

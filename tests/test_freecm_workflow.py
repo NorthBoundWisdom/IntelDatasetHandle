@@ -131,14 +131,14 @@ def test_environment_installation_and_source_update_are_separate_from_config() -
     source_root_workflow = Path("configs/source_root_workflow.py").read_text(encoding="utf-8")
     workbench_workflow = Path("configs/workbench_workflow.py").read_text(encoding="utf-8")
 
-    assert "def _cmd_init" in source_root_workflow
+    assert "def _cmd_initrepo" in source_root_workflow
     assert "initialize_environment()" in source_root_workflow
     assert "update_callback=" not in source_root_workflow
     assert "update_workbench" not in source_root_workflow
     assert "def _require_environment" in workbench_workflow
     assert '"refresh-index"' in workbench_workflow
     assert 'elif args.action == "refresh-index"' in workbench_workflow
-    assert "python3 configs/source_root_workflow.py --init" in workbench_workflow
+    assert "python3 configs/source_root_workflow.py --initrepo" in workbench_workflow
 
 
 def test_config_reuses_index_and_refresh_index_scans_explicitly(
@@ -209,3 +209,33 @@ def test_config_reuses_index_and_refresh_index_scans_explicitly(
     scan_commands = [command for command in commands if "scan" in command]
     assert len(scan_commands) == 1
     assert scan_commands[0][-5:] == ["--workers", "3", "--probe", "light", "--persist-options"]
+
+
+def test_initrepo_prepares_environment_only_after_seed_validation(monkeypatch) -> None:
+    from configs.source_root_workflow import SCRIPT, SourceRootWorkflowScript
+
+    calls = []
+    monkeypatch.setattr(
+        SourceRootWorkflowScript,
+        "_cmd_initrepo",
+        lambda self, quiet=False: calls.append("seeds") or 0,
+    )
+    monkeypatch.setattr(
+        "configs.source_root_workflow.initialize_environment",
+        lambda: calls.append("environment"),
+    )
+    assert SCRIPT.main(["--initrepo"]) == 0
+    assert calls == ["seeds", "environment"]
+
+
+def test_offline_initlock_does_not_install_environment(monkeypatch) -> None:
+    from configs.source_root_workflow import SCRIPT, SourceRootWorkflowScript
+
+    calls = []
+    monkeypatch.setattr(SourceRootWorkflowScript, "_cmd_initlock", lambda self: 0)
+    monkeypatch.setattr(
+        "configs.source_root_workflow.initialize_environment",
+        lambda: calls.append("environment"),
+    )
+    assert SCRIPT.main(["--initlock"]) == 0
+    assert calls == []

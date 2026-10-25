@@ -29,10 +29,11 @@ class WorkbenchSourceRootWorkflowScript(SourceRootWorkflowScript):
                 break
         return parser
 
-    def _cmd_init(self, *, quiet: bool = False) -> int:
+    def _cmd_initrepo(self, *, quiet: bool = False) -> int:
+        result = super()._cmd_initrepo(quiet=quiet)
         self._print_status("environment", "preparing Python environment")
         initialize_environment()
-        return super()._cmd_init(quiet=quiet)
+        return result
 
 
 SCRIPT = WorkbenchSourceRootWorkflowScript(
